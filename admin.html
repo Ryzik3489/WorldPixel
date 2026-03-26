@@ -2,131 +2,166 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>FluxPixel - ADMIN PANEL</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FluxPixel - ADMIN TERMINAL</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <style>
-        body { background: #050505; color: #0f0; font-family: 'Courier New', monospace; padding: 20px; }
-        .card { border: 1px solid #0f0; padding: 15px; margin-bottom: 20px; background: #0a0a0a; }
-        h1 { border-bottom: 2px solid #0f0; padding-bottom: 10px; }
-        button { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; cursor: pointer; margin: 5px; }
+        body { background: #0a0a0b; color: #0f0; font-family: 'Consolas', 'Courier New', monospace; padding: 20px; margin: 0; line-height: 1.4; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: #111; border: 1px solid #0f0; padding: 20px; margin-bottom: 20px; box-shadow: 0 0 10px rgba(0,255,0,0.1); }
+        h1, h2 { text-transform: uppercase; border-bottom: 1px solid #0f0; padding-bottom: 5px; }
+        
+        button { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px 15px; cursor: pointer; font-family: inherit; font-weight: bold; transition: 0.2s; }
         button:hover { background: #0f0; color: #000; }
-        .danger { border-color: #f00; color: #f00; }
-        .danger:hover { background: #f00; color: #fff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
-        .banned { color: #f00; }
+        .danger-btn { border-color: #f00; color: #f00; }
+        .danger-btn:hover { background: #f00; color: #fff; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #222; padding: 10px; text-align: left; font-size: 13px; word-break: break-all; }
+        tr:hover { background: #161616; }
+        .banned-row { color: #f44 !important; }
+        #auth-status { font-weight: bold; color: #fff; }
+        .status-tag { padding: 2px 5px; border-radius: 3px; font-size: 10px; border: 1px solid; }
+        .tag-active { border-color: #0f0; color: #0f0; }
+        .tag-banned { border-color: #f00; color: #f00; }
     </style>
 </head>
 <body>
 
-    <h1>FLUX_PIXEL // ADMIN_CORE</h1>
-
-    <div id="auth-check" class="card">
-        <p>Статус: <span id="auth-status">Проверка авторизации...</span></p>
-        <button id="btn-login">ВОЙТИ КАК АДМИН</button>
+<div class="container">
+    <h1>FluxPixel // Admin Terminal</h1>
+    
+    <div id="auth-panel" class="card">
+        <p>Статус: <span id="auth-status">Инициализация...</span></p>
+        <button id="btn-login" style="display:none;">LOGIN VIA GOOGLE</button>
     </div>
 
-    <div id="admin-content" style="display:none;">
+    <div id="admin-controls" style="display:none;">
         <div class="card">
-            <h3>УПРАВЛЕНИЕ ХОЛСТОМ</h3>
-            <p>Внимание: действие необратимо!</p>
-            <button class="danger" id="btn-clear-canvas">ОЧИСТИТЬ ВЕСЬ ХОЛСТ</button>
+            <h2>Canvas Root Control</h2>
+            <p>Внимание: Полная очистка холста необратима.</p>
+            <button class="danger-btn" id="btn-clear">ERASE ALL PIXELS</button>
         </div>
 
         <div class="card">
-            <h3>СПИСОК ИГРОКОВ (АКТИВНОСТЬ)</h3>
-            <table id="users-table">
+            <h2>Registered Entities (Users)</h2>
+            <table id="user-list">
                 <thead>
                     <tr>
-                        <th>UID пользователя</th>
-                        <th>Статус</th>
-                        <th>Действие</th>
+                        <th>UID</th>
+                        <th>Status</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody>
+                    </tbody>
             </table>
         </div>
     </div>
+</div>
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
-            authDomain: "doodle-102.firebaseapp.com",
-            projectId: "doodle-102",
-            databaseURL: "https://doodle-102-default-rtdb.firebaseio.com",
-            appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
-        };
+<script>
+    // --- КОНФИГ ТВОЕГО ПРОЕКТА ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
+        authDomain: "doodle-102.firebaseapp.com",
+        projectId: "doodle-102",
+        databaseURL: "https://doodle-102-default-rtdb.firebaseio.com",
+        storageBucket: "doodle-102.firebasestorage.app",
+        appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
+    };
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-        const auth = firebase.auth();
+    // Инициализация Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
+    const myUID = "bAiezqQcRoWYo0IJhKHQKBhGucB2";
 
-        // Вход
-        document.getElementById('btn-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    const authStatus = document.getElementById('auth-status');
+    const loginBtn = document.getElementById('btn-login');
+    const adminControls = document.getElementById('admin-controls');
 
-        auth.onAuthStateChanged(user => {
-            if (user) {
-                document.getElementById('auth-status').innerText = "АДМИН: " + user.email;
-                document.getElementById('admin-content').style.display = "block";
-                loadUsers();
+    // Логин
+    loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+
+    // Отслеживание входа
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            if (user.uid === myUID) {
+                authStatus.innerText = "ROOT ACCESS GRANTED (" + user.displayName + ")";
+                authStatus.style.color = "#0f0";
+                loginBtn.style.display = "none";
+                adminControls.style.display = "block";
+                loadUserManagement();
             } else {
-                document.getElementById('auth-status').innerText = "НЕ АВТОРИЗОВАН";
-                document.getElementById('admin-content').style.display = "none";
+                authStatus.innerText = "ACCESS DENIED: UID MISMATCH";
+                authStatus.style.color = "#f00";
+                loginBtn.style.display = "block";
             }
-        });
+        } else {
+            authStatus.innerText = "НЕ АВТОРИЗОВАН";
+            authStatus.style.color = "#888";
+            loginBtn.style.display = "block";
+            adminControls.style.display = "none";
+        }
+    });
 
-        // Очистка холста
-        document.getElementById('btn-clear-canvas').onclick = () => {
-            if (confirm("ТЫ УВЕРЕН? Все рисунки будут удалены навсегда!")) {
-                db.ref('canvas').remove()
-                    .then(() => alert("Холст дефрагментирован (очищен)"))
-                    .catch(err => alert("Ошибка доступа: " + err.message));
-            }
-        };
+    // Функция очистки
+    document.getElementById('btn-clear').onclick = () => {
+        if(confirm("ПОДТВЕРДИТЬ ПОЛНУЮ ДЕФРАГМЕНТАЦИЮ ХОЛСТА?")) {
+            db.ref('canvas').remove()
+                .then(() => alert("Холст очищен."))
+                .catch(e => alert("Ошибка: " + e.message));
+        }
+    };
 
-        // Загрузка пользователей из истории рисования
-        function loadUsers() {
-            const tbody = document.querySelector('#users-table tbody');
+    function loadUserManagement() {
+        const tbody = document.querySelector('#user-list tbody');
+        
+        // Слушаем баны в реальном времени
+        db.ref('banned_users').on('value', bannedSnap => {
+            const bannedData = bannedSnap.val() || {};
             
-            // Получаем список забаненных
-            db.ref('banned_users').on('value', bannedSnap => {
-                const bannedList = bannedSnap.val() || {};
+            // Получаем список из истории холста
+            db.ref('canvas').limitToLast(500).once('value', canvasSnap => {
+                const canvasData = canvasSnap.val() || {};
+                const usersSet = new Set();
                 
-                // Получаем список тех, кто рисовал (из базы холста)
-                db.ref('canvas').limitToLast(500).once('value', canvasSnap => {
-                    const pixels = canvasSnap.val() || {};
-                    const uniqueUsers = new Set();
-                    Object.values(pixels).forEach(p => if(p.uid) uniqueUsers.add(p.uid));
+                // Исправленный цикл
+                Object.values(canvasData).forEach(pixel => {
+                    if(pixel.uid) usersSet.add(pixel.uid);
+                });
 
-                    tbody.innerHTML = '';
-                    uniqueUsers.forEach(uid => {
-                        const isBanned = bannedList[uid];
-                        const row = `
-                            <tr>
-                                <td>${uid}</td>
-                                <td class="${isBanned ? 'banned' : ''}">${isBanned ? 'ЗАБАНЕН' : 'АКТИВЕН'}</td>
-                                <td>
-                                    ${isBanned 
-                                        ? `<button onclick="unban('${uid}')">РАЗБАНИТЬ</button>` 
-                                        : `<button class="danger" onclick="ban('${uid}')">БАН</button>`}
-                                </td>
-                            </tr>
-                        `;
-                        tbody.innerHTML += row;
-                    });
+                tbody.innerHTML = '';
+                usersSet.forEach(uid => {
+                    const isBanned = bannedData[uid];
+                    const row = document.createElement('tr');
+                    if(isBanned) row.className = 'banned-row';
+                    
+                    row.innerHTML = `
+                        <td>${uid}</td>
+                        <td><span class="status-tag ${isBanned ? 'tag-banned' : 'tag-active'}">${isBanned ? 'BANNED' : 'ACTIVE'}</span></td>
+                        <td>
+                            ${isBanned 
+                                ? `<button onclick="unban('${uid}')">UNBAN</button>` 
+                                : `<button class="danger-btn" onclick="ban('${uid}')">BAN</button>`}
+                        </td>
+                    `;
+                    tbody.appendChild(row);
                 });
             });
-        }
+        });
+    }
 
-        window.ban = (uid) => {
-            db.ref('banned_users/' + uid).set(true);
-        };
+    // Функции в глобальной области видимости для кнопок в таблице
+    window.ban = (uid) => {
+        if(uid === myUID) return alert("Нельзя забанить самого себя!");
+        db.ref('banned_users/' + uid).set(true);
+    };
+    window.unban = (uid) => db.ref('banned_users/' + uid).remove();
 
-        window.unban = (uid) => {
-            db.ref('banned_users/' + uid).remove();
-        };
-    </script>
+</script>
 </body>
 </html>
