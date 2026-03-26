@@ -63,15 +63,23 @@
 
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
     let lastDraw = 0;
-    const CD_TIME = 1000;
+    const CD_TIME = 500; // ПОЛСЕКУНДЫ
 
-    // СИНХРОНИЗАЦИЯ
+    // СИНХРОНИЗАЦИЯ ПИКСЕЛЕЙ
     db.ref('canvas').on('child_added', s => drawToBuffer(s.val()));
     db.ref('canvas').on('child_changed', s => drawToBuffer(s.val()));
     
-    const presenceRef = db.ref('presence').push(true);
-    presenceRef.onDisconnect().remove();
-    db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren());
+    // ИСПРАВЛЕННЫЙ ОНЛАЙН (БЕЗ ФАНТОМОВ ПРИ ОБНОВЛЕНИИ)
+    const onlineStatusRef = db.ref('presence').push();
+    db.ref('.info/connected').on('value', (snapshot) => {
+        if (snapshot.val() === true) {
+            onlineStatusRef.set(true);
+            onlineStatusRef.onDisconnect().remove();
+        }
+    });
+    db.ref('presence').on('value', s => {
+        document.getElementById('online').innerText = s.numChildren();
+    });
 
     function drawToBuffer(p) {
         if(!p) return;
