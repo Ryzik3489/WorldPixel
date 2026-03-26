@@ -3,23 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FluxPixel - Mobile & PC</title>
+    <title>WorldPixel ПОЛНЫЙ ХАОС</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #0e0e0e; font-family: sans-serif; touch-action: none; }
-        canvas { display: block; image-rendering: pixelated; background: #fff; }
+        body { margin: 0; overflow: hidden; background: #0e0e0e; font-family: 'Consolas', monospace; touch-action: none; }
+        
+        /* Делаем пиксели ЧЕТКИМИ (чече) */
+        canvas { 
+            display: block; 
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: pixelated;
+            image-rendering: optimizeSpeed;
+            background: #fff;
+        }
         
         #hud {
             position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none;
             display: flex; justify-content: space-between; z-index: 100;
         }
         .panel {
-            background: rgba(0, 0, 0, 0.8); padding: 8px 12px; border: 1px solid #0f0;
-            pointer-events: auto; color: #0f0; border-radius: 5px; font-size: 12px;
+            background: rgba(10, 10, 10, 0.9); padding: 8px 12px; border: 1px solid #0f0;
+            pointer-events: auto; color: #0f0; border-radius: 4px; font-size: 13px;
+            box-shadow: 0 0 15px rgba(0,255,0,0.2);
         }
-        #controls { display: flex; gap: 10px; align-items: center; }
-        input[type="color"] { border: 1px solid #0f0; width: 30px; height: 30px; cursor: pointer; background: none; }
+        #controls { display: flex; gap: 12px; align-items: center; }
+        input[type="color"] { border: 1px solid #0f0; width: 32px; height: 32px; cursor: pointer; background: none; padding: 0; }
+        #status-dot { display: inline-block; width: 8px; height: 8px; background: #0f0; border-radius: 50%; margin-right: 5px; }
     </style>
 </head>
 <body>
@@ -29,12 +40,15 @@
             <input type="color" id="colorPicker" value="#000000">
             <span id="coords">X:0 Y:0</span>
         </div>
-        <div id="online-stat" class="panel">● ONLINE: <span id="online-count">0</span></div>
+        <div class="panel">
+            <span id="status-dot"></span> ONLINE: <span id="online-count">0</span>
+        </div>
     </div>
 
     <canvas id="canvas"></canvas>
 
     <script>
+        // --- КОНФИГУРАЦИЯ FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
             authDomain: "doodle-102.firebaseapp.com",
@@ -53,96 +67,128 @@
         const ctx = canvas.getContext('2d', { alpha: false });
         const colorPicker = document.getElementById('colorPicker');
 
-        const P_SIZE = 8; 
-        const WORLD_SIZE = 1000;
+        // Настройки мира
+        const P_SIZE = 10; // Масштаб пикселя
+        const WORLD_SIZE = 2000; // 2000x2000 пикселей
         let zoom = 1.0;
         let offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
 
+        // Внутренний холст-кэш (для мгновенной отрисовки)
         const world = document.createElement('canvas');
         world.width = WORLD_SIZE;
         world.height = WORLD_SIZE;
-        const wctx = world.getContext('2d');
+        const wctx = world.getContext('2d', { alpha: false });
         wctx.fillStyle = "white";
         wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-        // ОНЛАЙН
+        // --- ЛОГИКА ОНЛАЙНА ---
         const myPresence = presenceRef.push(true);
         myPresence.onDisconnect().remove();
-        presenceRef.on('value', s => { document.getElementById('online-count').innerText = s.numChildren(); });
+        presenceRef.on('value', snap => {
+            document.getElementById('online-count').innerText = snap.numChildren();
+        });
 
-        // СИНХРОНИЗАЦИЯ
-        pixelsRef.on('child_added', s => {
-            const d = s.val();
+        // --- СИНХРОНИЗАЦИЯ ПИКСЕЛЕЙ ---
+        pixelsRef.on('child_added', snap => {
+            const d = snap.val();
             wctx.fillStyle = d.color;
             wctx.fillRect(d.x, d.y, 1, 1);
         });
 
         function sendPixel(x, y) {
             if (x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
+            // Сохраняем по ключу x_y, чтобы не плодить дубликаты
             db.ref('canvas/' + x + '_' + y).set({ x, y, color: colorPicker.value });
         }
 
-        // УПРАВЛЕНИЕ (PC + MOBILE)
+        // --- УПРАВЛЕНИЕ (PC + MOBILE) ---
         let isDrawing = false;
-        let lastTouchDist = 0;
+        let isPanning = false;
+        let lastTouch = { x: 0, y: 0 };
 
-        function getPos(e) {
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        function getWorldPos(clientX, clientY) {
             const x = Math.floor(((clientX - offset.x) / zoom) / P_SIZE + WORLD_SIZE/2);
             const y = Math.floor(((clientY - offset.y) / zoom) / P_SIZE + WORLD_SIZE/2);
-            return { x, y, clientX, clientY };
+            return { x, y };
         }
 
-        const handleStart = e => {
-            if (e.touches && e.touches.length > 1) return; // Зум двумя пальцами
-            isDrawing = true;
-            const p = getPos(e);
-            sendPixel(p.x, p.y);
-        };
+        // Обработка мыши
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 0) isDrawing = true;
+            else isPanning = true;
+            const p = getWorldPos(e.clientX, e.clientY);
+            if (isDrawing) sendPixel(p.x, p.y);
+        });
 
-        const handleMove = e => {
-            const p = getPos(e);
-            document.getElementById('coords').innerText = `X:${p.x} Y:${p.y}`;
-
-            if (isDrawing && (!e.touches || e.touches.length === 1)) {
+        // Обработка Touch (Мобилки)
+        canvas.addEventListener('touchstart', e => {
+            if (e.touches.length === 1) {
+                isDrawing = true;
+                const p = getWorldPos(e.touches[0].clientX, e.touches[0].clientY);
                 sendPixel(p.x, p.y);
+            } else if (e.touches.length === 2) {
+                isPanning = true;
+                lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
-            
-            // Перемещение (зажатая кнопка мыши или два пальца)
-            if (e.buttons === 2 || (e.touches && e.touches.length === 2)) {
-                // Упрощенное перемещение для примера
-                offset.x += e.movementX || 0;
-                offset.y += e.movementY || 0;
-            }
-        };
+        }, { passive: false });
 
-        canvas.addEventListener('mousedown', handleStart);
-        canvas.addEventListener('touchstart', handleStart);
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('touchmove', handleMove);
-        window.addEventListener('mouseup', () => isDrawing = false);
-        window.addEventListener('touchend', () => isDrawing = false);
+        window.addEventListener('mousemove', e => {
+            const p = getWorldPos(e.clientX, e.clientY);
+            document.getElementById('coords').innerText = `X:${p.x} Y:${p.y}`;
+            if (isDrawing) sendPixel(p.x, p.y);
+            if (isPanning) {
+                offset.x += e.movementX;
+                offset.y += e.movementY;
+            }
+        });
+
+        window.addEventListener('touchmove', e => {
+            if (isDrawing && e.touches.length === 1) {
+                const p = getWorldPos(e.touches[0].clientX, e.touches[0].clientY);
+                sendPixel(p.x, p.y);
+            } else if (isPanning && e.touches.length === 2) {
+                const touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                offset.x += touch.x - lastTouch.x;
+                offset.y += touch.y - lastTouch.y;
+                lastTouch = touch;
+            }
+        }, { passive: false });
+
+        window.addEventListener('mouseup', () => { isDrawing = false; isPanning = false; });
+        window.addEventListener('touchend', () => { isDrawing = false; isPanning = false; });
 
         // Зум колесиком
         window.addEventListener('wheel', e => {
-            zoom *= (e.deltaY > 0 ? 0.9 : 1.1);
-        }, {passive: false});
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            zoom *= delta;
+            zoom = Math.min(Math.max(zoom, 0.1), 20); // Ограничение зума
+        }, { passive: false });
 
+        // --- ГЛАВНЫЙ РЕНДЕР ---
         function render() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            ctx.fillStyle = "#222";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            
+            ctx.scale(dpr, dpr);
+            ctx.imageSmoothingEnabled = false; // Жёсткий запрет размытия
+
+            ctx.fillStyle = "#1a1a1b"; // Фон вокруг холста
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
             ctx.save();
             ctx.translate(offset.x, offset.y);
             ctx.scale(zoom * P_SIZE, zoom * P_SIZE);
+            
+            // Рисуем наш мир
             ctx.drawImage(world, -WORLD_SIZE/2, -WORLD_SIZE/2);
             ctx.restore();
+
             requestAnimationFrame(render);
         }
+
         render();
-        canvas.oncontextmenu = () => false;
+        canvas.oncontextmenu = () => false; // Отключаем меню ПКМ
     </script>
 </body>
 </html>
