@@ -2,57 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WorldPixel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>WorldPixel | Stable</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #080808; font-family: 'Consolas', monospace; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; touch-action: none; -webkit-user-select: none; }
+        canvas { display: block; image-rendering: pixelated; }
         
-        /* КРИТИЧЕСКИ ВАЖНО ДЛЯ ЧЕТКОСТИ */
-        canvas { 
-            display: block; 
-            image-rendering: optimizeSpeed;             /* Firefox */
-            image-rendering: -moz-crisp-edges;          /* Firefox */
-            image-rendering: -webkit-optimize-contrast; /* Safari */
-            image-rendering: -o-crisp-edges;            /* OS X & Windows Opera */
-            image-rendering: pixelated;                 /* Standard */
-            -ms-interpolation-mode: nearest-neighbor;   /* IE */
+        /* Экран загрузки и входа */
+        #overlay { 
+            position: fixed; inset: 0; background: #000; z-index: 9999; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; color: #0f0;
+        }
+        .btn { 
+            background: #0f0; color: #000; border: none; padding: 15px 30px; 
+            font-size: 1.2rem; font-weight: bold; cursor: pointer; margin-top: 20px;
         }
         
-        #login-screen { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; color: #0f0; }
-        #btn-login { background: #0f0; color: #000; border: none; padding: 20px 40px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 0 20px #0f0; }
+        /* Интерфейс */
+        #ui { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
+        .panel { background: rgba(0,0,0,0.85); border: 1px solid #0f0; padding: 8px; color: #0f0; pointer-events: auto; }
+        input[type="color"] { width: 40px; height: 40px; border: 1px solid #0f0; background: none; vertical-align: middle; }
         
-        #hud { position: fixed; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: none; z-index: 100; }
-        .panel { background: rgba(0,0,0,0.8); border: 1px solid #0f0; padding: 8px; color: #0f0; pointer-events: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; }
-        input[type="color"] { width: 35px; height: 35px; border: 1px solid #0f0; background: none; }
-        
-        #cooldown-bar { position: fixed; bottom: 0; left: 0; height: 4px; background: #0f0; width: 0%; z-index: 1000; }
+        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #0f0; width: 0%; z-index: 1001; }
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="login-screen">
-        <h1>WORLD_PIXEL</h1>
-        <button id="btn-login">LOGIN</button>
+    <div id="overlay">
+        <h1 id="status-text">INITIALIZING...</h1>
+        <button id="btn-auth" class="btn hidden">LOGIN TO DRAW</button>
     </div>
 
-    <div id="cooldown-bar"></div>
+    <div id="cooldown"></div>
 
-    <div id="hud" class="hidden">
+    <div id="ui" class="hidden">
         <div class="panel">
             <input type="color" id="colorPicker" value="#000000">
             <span id="coords">0,0</span>
         </div>
-        <div class="panel">ONLINE: <span id="online-count">0</span></div>
+        <div class="panel">📡 <span id="online">0</span></div>
     </div>
 
     <canvas id="canvas"></canvas>
 
 <script>
-    const firebaseConfig = {
+    const config = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
         authDomain: "doodle-102.firebaseapp.com",
         projectId: "doodle-102",
@@ -60,150 +58,135 @@
         appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
     };
 
-    firebase.initializeApp(firebaseConfig);
+    firebase.initializeApp(config);
     const db = firebase.database();
     const auth = firebase.auth();
 
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
-    
-    // Вспомогательный холст для хранения пикселей
     const world = document.createElement('canvas');
     const wctx = world.getContext('2d', { alpha: false });
-    const WORLD_SIZE = 2000; 
-    const P_SIZE = 1; // Рисуем 1к1 для четкости
+    const W_SIZE = 2000;
 
-    world.width = world.height = WORLD_SIZE;
-    wctx.fillStyle = "white"; 
-    wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+    world.width = world.height = W_SIZE;
+    wctx.fillStyle = "#FFFFFF";
+    wctx.fillRect(0, 0, W_SIZE, W_SIZE);
 
-    let zoom = 5.0; // Сразу немного приблизим
-    let offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
-    let currentUser = null;
-    let lastDrawTime = 0;
+    let zoom = 4.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
+    let user = null, lastDraw = 0;
 
-    // ВХОД
-    document.getElementById('btn-login').onclick = () => {
-        auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-    };
+    // СИСТЕМА ВХОДА (REDIRECT для мобилок)
+    const btnAuth = document.getElementById('btn-auth');
+    const statusText = document.getElementById('status-text');
 
-    auth.onAuthStateChanged(user => {
-        if(user) {
-            currentUser = user;
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('hud').classList.remove('hidden');
-            initSync();
+    btnAuth.onclick = () => auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+
+    auth.onAuthStateChanged(u => {
+        if(u) {
+            user = u;
+            document.getElementById('overlay').classList.add('hidden');
+            document.getElementById('ui').classList.remove('hidden');
+            startApp();
+        } else {
+            statusText.innerText = "WORLD_PIXEL_V10";
+            btnAuth.classList.remove('hidden');
         }
     });
 
-    function initSync() {
-        // МГНОВЕННАЯ СИНХРОНИЗАЦИЯ: слушаем любые изменения в ветке canvas
-        db.ref('canvas').on('child_added', snap => updatePixel(snap.val()));
-        db.ref('canvas').on('child_changed', snap => updatePixel(snap.val()));
+    function startApp() {
+        // Загружаем данные и слушаем обновления
+        const canvasRef = db.ref('canvas');
         
-        // Очистка
-        db.ref('canvas').on('child_removed', () => {
-            wctx.fillStyle = "white";
-            wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
-        });
+        // Быстрая отрисовка изменений
+        canvasRef.on('child_added', s => drawToBuffer(s.val()));
+        canvasRef.on('child_changed', s => drawToBuffer(s.val()));
+        
+        // Онлайн статус
+        const presence = db.ref('presence').push(true);
+        presence.onDisconnect().remove();
+        db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren());
 
-        // Онлайн
-        db.ref('presence').push(true).onDisconnect().remove();
-        db.ref('presence').on('value', s => document.getElementById('online-count').innerText = s.numChildren());
+        // Авто-реконнект если пропал инет
+        db.ref(".info/connected").on("value", (snap) => {
+            if (snap.val() === false) console.log("Lost connection...");
+        });
     }
 
-    function updatePixel(p) {
+    function drawToBuffer(p) {
         if(!p) return;
         wctx.fillStyle = p.color;
         wctx.fillRect(p.x, p.y, 1, 1);
     }
 
-    function sendPixel(x, y) {
-        if(!currentUser || Date.now() - lastDrawTime < 1000) return;
-        if(x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
+    function send(x, y) {
+        if(!user || Date.now() - lastDraw < 1000) return;
+        if(x < 0 || x >= W_SIZE || y < 0 || y >= W_SIZE) return;
 
         const color = document.getElementById('colorPicker').value;
-        // Отправляем с меткой времени для принудительного обновления
         db.ref('canvas/' + x + '_' + y).set({
-            x, y, color, uid: currentUser.uid, t: Date.now()
+            x, y, color, t: firebase.database.ServerValue.TIMESTAMP
         });
         
-        lastDrawTime = Date.now();
-        startCooldown();
-    }
-
-    function startCooldown() {
-        const bar = document.getElementById('cooldown-bar');
+        lastDraw = Date.now();
+        const bar = document.getElementById('cooldown');
         bar.style.transition = 'none'; bar.style.width = '100%';
         setTimeout(() => { bar.style.transition = 'width 1s linear'; bar.style.width = '0%'; }, 50);
     }
 
-    // УПРАВЛЕНИЕ (ПК + МОБИЛКИ)
-    let isDrawing = false, isPanning = false;
-    let lastDist = 0, lastMid = {x:0, y:0};
+    // УПРАВЛЕНИЕ
+    let isDraw = false, isPan = false, lastD = 0, lastM = {x:0, y:0};
 
-    function getPos(cx, cy) {
+    function getP(cx, cy) {
         return {
-            x: Math.floor((cx - offset.x) / zoom + WORLD_SIZE/2),
-            y: Math.floor((cy - offset.y) / zoom + WORLD_SIZE/2)
+            x: Math.floor((cx - offset.x) / zoom + W_SIZE/2),
+            y: Math.floor((cy - offset.y) / zoom + W_SIZE/2)
         };
     }
 
-    // ТАЧ
+    // Тач (Телефон)
     canvas.addEventListener('touchstart', e => {
         if(e.touches.length === 1) {
-            isDrawing = true;
-            const p = getPos(e.touches[0].clientX, e.touches[0].clientY);
-            sendPixel(p.x, p.y);
+            isDraw = true; const p = getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x, p.y);
         } else if(e.touches.length === 2) {
-            isPanning = true; isDrawing = false;
-            lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            lastMid = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
+            isPan = true; isDraw = false;
+            lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            lastM = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
         }
     }, {passive: false});
 
     window.addEventListener('touchmove', e => {
         e.preventDefault();
-        if(isDrawing && e.touches.length === 1) {
-            const p = getPos(e.touches[0].clientX, e.touches[0].clientY);
-            sendPixel(p.x, p.y);
-        } else if(isPanning && e.touches.length === 2) {
-            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            const mid = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
-            offset.x += mid.x - lastMid.x; offset.y += mid.y - lastMid.y;
-            zoom = Math.min(Math.max(zoom * (dist/lastDist), 0.1), 50);
-            lastDist = dist; lastMid = mid;
+        if(isDraw && e.touches.length === 1) {
+            const p = getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x, p.y);
+        } else if(isPan && e.touches.length === 2) {
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const m = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
+            offset.x += m.x - lastM.x; offset.y += m.y - lastM.y;
+            zoom = Math.min(Math.max(zoom * (d/lastD), 0.1), 60);
+            lastD = d; lastM = m;
         }
     }, {passive: false});
 
-    // МЫШЬ
-    canvas.onmousedown = e => { if(e.button === 0) isDrawing = true; else isPanning = true; };
+    // Мышь (ПК)
+    canvas.onmousedown = e => { if(e.button===0) isDraw = true; else isPan = true; };
     window.onmousemove = e => {
-        const p = getPos(e.clientX, e.clientY);
+        const p = getP(e.clientX, e.clientY);
         document.getElementById('coords').innerText = p.x + "," + p.y;
-        if(isDrawing) sendPixel(p.x, p.y);
-        if(isPanning) { offset.x += e.movementX; offset.y += e.movementY; }
+        if(isDraw) send(p.x, p.y);
+        if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
-    window.onmouseup = window.ontouchend = () => { isDrawing = isPanning = false; };
-    window.onwheel = e => { zoom = Math.min(Math.max(zoom * (e.deltaY < 0 ? 1.2 : 0.8), 0.1), 50); };
+    window.onmouseup = window.ontouchend = () => { isDraw = isPan = false; };
+    window.onwheel = e => { zoom = Math.min(Math.max(zoom * (e.deltaY < 0 ? 1.2 : 0.8), 0.1), 60); };
 
     function render() {
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-        // ОТКЛЮЧАЕМ СГЛАЖИВАНИЕ В КОДЕ
         ctx.imageSmoothingEnabled = false;
-        ctx.mozImageSmoothingEnabled = false;
-        ctx.webkitImageSmoothingEnabled = false;
-        ctx.msImageSmoothingEnabled = false;
-
-        ctx.fillStyle = "#111"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
+        ctx.fillStyle = "#111"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.save();
         ctx.translate(offset.x, offset.y);
         ctx.scale(zoom, zoom);
-        // Рисуем буфер world (где все пиксели) в центр
-        ctx.drawImage(world, -WORLD_SIZE/2, -WORLD_SIZE/2);
+        ctx.drawImage(world, -W_SIZE/2, -W_SIZE/2);
         ctx.restore();
-        
         requestAnimationFrame(render);
     }
     render();
