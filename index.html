@@ -14,36 +14,43 @@
         }
         canvas { display: block; image-rendering: pixelated; }
 
-       // ПЕРЕПИСАННАЯ ГЕНЕРАЦИЯ ПАЛИТРЫ ДЛЯ ТАЧА
-    const paletteEl = document.getElementById('palette');
-    colors.forEach(c => {
-        const div = document.createElement('div');
-        div.className = 'color-dot' + (c === selectedColor ? ' active' : '');
-        div.style.background = c;
-        
-        // Обработчик специально для телефона и мышки сразу
-        const select = (e) => {
-            e.preventDefault();
-            e.stopPropagation(); // Остановка клика, чтобы он не ушел на холст
-            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
-            div.classList.add('active'); 
-            selectedColor = c;
-        };
+        /* ИНТЕРФЕЙС */
+        #ui-top { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+        .info-bar { display: flex; justify-content: space-between; }
+        .panel { 
+            background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
+            padding: 6px 12px; border-radius: 10px; backdrop-filter: blur(10px);
+            pointer-events: auto; font-size: 12px; font-weight: bold; color: #000;
+        }
 
-        div.addEventListener('touchstart', select, {passive: false});
-        div.addEventListener('mousedown', select);
+        .palette { 
+            display: flex; gap: 6px; background: rgba(255, 255, 255, 0.9); 
+            padding: 8px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.1);
+            pointer-events: auto; overflow-x: auto; backdrop-filter: blur(10px);
+        }
+        .color-dot { 
+            min-width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); 
+            cursor: pointer; flex-shrink: 0; box-sizing: border-box;
+        }
+        .color-dot.active { border: 3px solid #000; transform: scale(1.1); }
+
+        #chat-container { position: fixed; bottom: 20px; left: 10px; width: 260px; pointer-events: auto; z-index: 1000; }
+        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; }
+        #chat-messages { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+        .msg { background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; font-size: 11px; border: 1px solid rgba(0,0,0,0.05); animation: fO 5s forwards; width: fit-content; }
         
-        paletteEl.appendChild(div);
-    });
-        
+        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #ff3333; width: 0%; z-index: 1001; }
+        @keyframes fO { 0%, 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-3px); } }
+    </style>
+</head>
+<body>
     <div id="cooldown"></div>
     <div id="ui-top">
         <div class="info-bar">
             <div class="panel" id="coords">0, 0</div>
             <div class="panel">ОНЛАЙН: <span id="online">1</span></div>
         </div>
-        <div class="palette" id="palette">
-            </div>
+        <div class="palette" id="palette"></div>
     </div>
     <div id="chat-container"><div id="chat-messages"></div><input type="text" id="chat-input" placeholder="Чат..." maxlength="50"></div>
     <canvas id="canvas"></canvas>
@@ -58,18 +65,21 @@
     world.width = world.height = W_SIZE; wctx.fillStyle = "#fff"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
 
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0, selectedColor = "#ff0000";
-    const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#000000", "#ffffff", "#ff8800", "#8800ff"];
+    const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#000000", "#ffffff", "#ff8800", "#8800ff", "#00ffff", "#ff00ff"];
 
-    // ГЕНЕРАЦИЯ ПАЛИТРЫ
+    // ПАЛИТРА С ФИКСОМ ТАЧА
     const paletteEl = document.getElementById('palette');
     colors.forEach(c => {
         const div = document.createElement('div');
         div.className = 'color-dot' + (c === selectedColor ? ' active' : '');
         div.style.background = c;
-        div.onclick = () => {
+        const select = (e) => {
+            e.preventDefault(); e.stopPropagation();
             document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
             div.classList.add('active'); selectedColor = c;
         };
+        div.addEventListener('touchstart', select, {passive: false});
+        div.addEventListener('mousedown', select);
         paletteEl.appendChild(div);
     });
 
@@ -96,27 +106,53 @@
         setTimeout(()=>{ b.style.transition='width 500ms linear'; b.style.width='0%'; }, 20);
     }
 
-    let isD=false, isP=false, lD=0, lM={x:0,y:0};
-    window.oncontextmenu = e => e.preventDefault();
-    canvas.onmousedown = e => { if(e.button===0){isD=true; const p=getP(e.clientX,e.clientY); send(p.x,p.y);} else if(e.button===2)isP=true; };
-    window.onmousemove = e => { 
-        const p=getP(e.clientX,e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
-        if(isD)send(p.x,p.y); if(isP){offset.x+=e.movementX; offset.y+=e.movementY;}
-    };
-    canvas.ontouchstart = e => {
-        if(e.touches.length===1){ isD=true; const p=getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x,p.y); }
-        else if(e.touches.length===2){ isP=true; isD=false; lD=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); lM={x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2}; }
-    };
-    window.ontouchmove = e => {
-        e.preventDefault();
-        if(isD && e.touches.length===1){ const p=getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x,p.y); }
-        else if(isP && e.touches.length===2){
-            const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-            const m={x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2};
-            offset.x+=m.x-lM.x; offset.y+=m.y-lM.y; zoom=Math.min(Math.max(zoom*(d/lD),0.1),80); lD=d; lM=m;
+    // УПРАВЛЕНИЕ: ТАП = РИСОВАТЬ, СВАЙП = ЛИСТАТЬ
+    let isPan = false, lastTouch = {x:0, y:0}, touchStartPos = {x:0, y:0}, startTime = 0, lastD = 0;
+
+    canvas.addEventListener('touchstart', e => {
+        startTime = Date.now();
+        if(e.touches.length === 1) {
+            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            lastTouch = { ...touchStartPos };
+            isPan = true;
+        } else if(e.touches.length === 2) {
+            lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         }
+    }, {passive: false});
+
+    window.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if(e.touches.length === 1 && isPan) {
+            const touch = e.touches[0];
+            offset.x += touch.clientX - lastTouch.x;
+            offset.y += touch.clientY - lastTouch.y;
+            lastTouch = { x: touch.clientX, y: touch.clientY };
+        } else if(e.touches.length === 2) {
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            zoom = Math.min(Math.max(zoom * (d/lastD), 0.1), 80);
+            lastD = d;
+        }
+    }, {passive: false});
+
+    window.addEventListener('touchend', e => {
+        const duration = Date.now() - startTime;
+        const dist = Math.hypot(lastTouch.x - touchStartPos.x, lastTouch.y - touchStartPos.y);
+        // Если касание было коротким и палец почти не двигался — ставим пиксель
+        if(duration < 200 && dist < 10) {
+            const p = getP(touchStartPos.x, touchStartPos.y);
+            send(p.x, p.y);
+        }
+        isPan = false;
+    });
+
+    // МЫШКА (ПК)
+    window.oncontextmenu = e => e.preventDefault();
+    canvas.onmousedown = e => { if(e.button===0) { const p=getP(e.clientX, e.clientY); send(p.x, p.y); } else if(e.button===2) isPan=true; };
+    window.onmousemove = e => { 
+        const p=getP(e.clientX, e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
+        if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
-    window.onmouseup = window.ontouchend = () => isD=isP=false;
+    window.onmouseup = () => isPan = false;
     window.onwheel = e => zoom = Math.min(Math.max(zoom*(e.deltaY<0?1.2:0.8),0.1),80);
 
     function render() {
