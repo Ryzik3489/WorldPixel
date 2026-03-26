@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Mega Canvas 2026</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1b; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; background: #fff; image-rendering: pixelated; }
+        
+        #ui {
+            position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
+            background: #2d2d2e; padding: 10px 25px; border-radius: 50px;
+            display: flex; gap: 15px; align-items: center; border: 1px solid #444; color: #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;
+        }
+        #online-box {
+            position: fixed; top: 15px; right: 15px; background: rgba(0,0,0,0.8);
+            padding: 10px 15px; border-radius: 8px; color: #0f0; border: 1px solid #333; z-index: 100;
+        }
+        input[type="color"] { border: none; width: 30px; height: 30px; cursor: pointer; background: none; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <input type="color" id="colorPicker" value="#ff0000">
+        <span style="font-size: 14px;">ЛКМ: Рисовать | ПКМ/Колесо: Двигать | Zoom: Колесико</span>
+    </div>
+
+    <div id="online-box">Статус: <span id="status">Подключение...</span></div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const colorPicker = document.getElementById('colorPicker');
+
+        // Параметры бесконечного холста
+        let cameraOffset = { x: window.innerWidth/2, y: window.innerHeight/2 };
+        let cameraZoom = 1;
+        let MAX_ZOOM = 10;
+        let MIN_ZOOM = 0.1;
+        let SCROLL_SENSITIVITY = 0.001;
+
+        // Размер виртуального холста
+        const WORLD_SIZE = 10000;
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = WORLD_SIZE;
+        offscreenCanvas.height = WORLD_SIZE;
+        const octx = offscreenCanvas.getContext('2d');
+        octx.fillStyle = "white";
+        octx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+        // --- СЕТЬ (Исправлено на SSL) ---
+        const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, "vibe_" + Math.random().toString(16).slice(2));
+        const TOPIC = "vibe_coder_canvas_secure_2026";
+
+        client.connect({ 
+            useSSL: true, 
+            onSuccess: () => {
+                client.subscribe(TOPIC);
+                statusEl.innerText = "В СЕТИ";
+                statusEl.style.color = "#0f0";
+            },
+            onFailure: () => { statusEl.innerText = "ОШИБКА"; }
+        });
+
+        client.onMessageArrived = (msg) => {
+            const d = JSON.parse(msg.payloadString);
+            drawOnWorld(d.x1, d.y1, d.x2, d.y2, d.color);
+        };
+
+        function drawOnWorld(x1, y1, x2, y2, color) {
+            octx.beginPath();
+            octx.strokeStyle = color;
+            octx.lineWidth = 5;
+            octx.lineCap = 'round';
+            octx.moveTo(x1, y1);
+            octx.lineTo(x2, y2);
+            octx.stroke();
+        }
+
+        // --- РЕНДЕР ---
+        function draw() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.translate(cameraOffset.x, cameraOffset.y);
+            ctx.scale(cameraZoom, cameraZoom);
+            
+            // Рисуем наш огромный холст (центрируем его)
+            ctx.drawImage(offscreenCanvas, -WORLD_SIZE/2, -WORLD_SIZE/2);
+            
+            requestAnimationFrame(draw);
+        }
+
+        // --- УПРАВЛЕНИЕ ---
+        let isPainting = false;
+        let isPanning = false;
+        let startPan = { x: 0, y: 0 };
+        let lastWorldPos = { x: 0, y: 0 };
+
+        function getEventPos(e) {
+            return {
+                x: (e.clientX - cameraOffset.x) / cameraZoom,
+                y: (e.clientY - cameraOffset.y) / cameraZoom
+            };
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 0) { // ЛКМ
+                isPainting = true;
+                const pos = getEventPos(e);
+                lastWorldPos = { x: pos.x + WORLD_SIZE/2, y: pos.y + WORLD_SIZE/2 };
+            } else { // ПКМ или Колесо
+                isPanning = true;
+                startPan = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (isPainting) {
+                const pos = getEventPos(e);
+                const currentWorldPos = { x: pos.x + WORLD_SIZE/2, y: pos.y + WORLD_SIZE/2 };
+                
+                // Рисуем у себя
+                drawOnWorld(lastWorldPos.x, lastWorldPos.y, currentWorldPos.x, currentWorldPos.y, colorPicker.value);
+                
+                // Отправляем другим
+                const payload = JSON.stringify({
+                    x1: lastWorldPos.x, y1: lastWorldPos.y, 
+                    x2: currentWorldPos.x, y2: currentWorldPos.y, 
+                    color: colorPicker.value
+                });
+                if(client.isConnected()) {
+                    let message = new Paho.MQTT.Message(payload);
+                    message.destinationName = TOPIC;
+                    client.send(message);
+                }
+                lastWorldPos = currentWorldPos;
+            }
+            if (isPanning) {
+                cameraOffset.x = e.clientX - startPan.x;
+                cameraOffset.y = e.clientY - startPan.y;
+            }
+        });
+
+        window.addEventListener('mouseup', () => { isPainting = false; isPanning = false; });
+        canvas.addEventListener('contextmenu', e => e.preventDefault()); // Отключаем меню ПКМ
+
+        // Зум колесиком
+        canvas.addEventListener('wheel', e => {
+            let zoomAmount = -e.deltaY * SCROLL_SENSITIVITY;
+            cameraZoom += zoomAmount;
+            cameraZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cameraZoom));
+        });
+
+        draw(); // Запуск цикла отрисовки
+    </script>
+</body>
+</html>
