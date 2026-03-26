@@ -3,31 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WorldPixel | Battle for Canvas</title>
+    <title>WorldPixel | Mobile Optimized</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #0c0c0d; font-family: 'Consolas', monospace; touch-action: none; user-select: none; }
         :root { --primary: #0f0; --bg: rgba(10, 10, 12, 0.95); }
-        canvas { display: block; image-rendering: pixelated; background: #fff; cursor: crosshair; }
+        canvas { display: block; image-rendering: pixelated; background: #fff; touch-action: none; }
         #hud { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
-        .panel { background: var(--bg); padding: 8px 12px; border: 1px solid var(--primary); pointer-events: auto; color: var(--primary); border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 10px rgba(0,255,0,0.1); }
-        #login-screen { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: var(--primary); text-align: center; }
-        button { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 12px 24px; cursor: pointer; font-family: inherit; font-weight: bold; transition: 0.3s; margin-top: 20px; text-transform: uppercase; }
-        button:hover { background: var(--primary); color: #000; box-shadow: 0 0 20px var(--primary); }
-        input[type="color"] { border: 1px solid var(--primary); width: 30px; height: 30px; cursor: pointer; background: none; padding: 0; outline: none; }
+        .panel { background: var(--bg); padding: 8px 12px; border: 1px solid var(--primary); pointer-events: auto; color: var(--primary); border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+        #login-screen { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: var(--primary); }
+        button { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 12px 24px; cursor: pointer; font-family: inherit; margin-top: 20px; text-transform: uppercase; }
+        input[type="color"] { border: 1px solid var(--primary); width: 30px; height: 30px; background: none; cursor: pointer; }
         .hidden { display: none !important; }
         #cooldown-container { position: fixed; bottom: 0; left: 0; width: 100%; height: 4px; background: rgba(0,0,0,0.7); z-index: 1001; }
-        #cooldown-bar { width: 0%; height: 100%; background: var(--primary); box-shadow: 0 0 15px var(--primary); }
+        #cooldown-bar { width: 0%; height: 100%; background: var(--primary); }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
-        <h1 style="letter-spacing: 5px;">WORLD_PIXEL</h1>
-        <p>REWRITE PROTOCOL: ENABLED</p>
-        <button id="btn-login">Start Battle</button>
+        <h1>WORLD_PIXEL</h1>
+        <p>MOBILE_TOUCH_PROTOCOL: ACTIVE</p>
+        <button id="btn-login">Connect</button>
     </div>
 
     <div id="cooldown-container"><div id="cooldown-bar"></div></div>
@@ -37,7 +36,7 @@
             <input type="color" id="colorPicker" value="#000000">
             <span id="coords">X:0 Y:0</span>
         </div>
-        <div class="panel"><span id="user-name">...</span> | ONLINE: <span id="online-count">0</span></div>
+        <div class="panel"><span id="online-count">0</span> ONLINE</div>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -55,7 +54,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const auth = firebase.auth();
-        const provider = new firebase.auth.GoogleAuthProvider();
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d', { alpha: false });
@@ -71,132 +69,130 @@
         world.width = WORLD_SIZE; world.height = WORLD_SIZE;
         wctx.fillStyle = "white"; wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-        document.getElementById('btn-login').onclick = () => auth.signInWithPopup(provider);
+        document.getElementById('btn-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 
         auth.onAuthStateChanged(user => {
             if (user) {
-                db.ref('banned_users/' + user.uid).on('value', snap => {
-                    if (snap.val() === true) { auth.signOut(); location.reload(); }
-                });
                 currentUser = user;
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('hud').classList.remove('hidden');
-                document.getElementById('user-name').innerText = user.displayName.split(' ')[0].toUpperCase();
                 initWorld();
-            } else {
-                currentUser = null;
-                document.getElementById('login-screen').classList.remove('hidden');
-                document.getElementById('hud').classList.add('hidden');
             }
         });
 
         function initWorld() {
-            const canvasRef = db.ref('canvas');
-            
-            const drawPixel = (snap) => {
-                const d = snap.val();
-                if (!d) return;
-                wctx.fillStyle = d.color;
-                wctx.fillRect(d.x, d.y, 1, 1);
-            };
+            db.ref('canvas').on('child_added', draw);
+            db.ref('canvas').on('child_changed', draw);
+            db.ref('presence').push(true).onDisconnect().remove();
+            db.ref('presence').on('value', s => { document.getElementById('online-count').innerText = s.numChildren(); });
+        }
 
-            // Слушаем новые пиксели и ИЗМЕНЕНИЯ старых
-            canvasRef.on('child_added', drawPixel);
-            canvasRef.on('child_changed', drawPixel);
-            
-            canvasRef.on('child_removed', () => {
-                wctx.fillStyle = "white";
-                wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
-            });
-
-            const presenceRef = db.ref('presence').push(true);
-            presenceRef.onDisconnect().remove();
-            db.ref('presence').on('value', s => { 
-                document.getElementById('online-count').innerText = s.numChildren(); 
-            });
+        function draw(snap) {
+            const d = snap.val();
+            if(!d) return;
+            wctx.fillStyle = d.color;
+            wctx.fillRect(d.x, d.y, 1, 1);
         }
 
         function sendPixel(x, y) {
-            if (!currentUser || x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
-            const now = Date.now();
-            if (now - lastDrawTime < COOLDOWN_MS) return;
-
+            if (!currentUser || Date.now() - lastDrawTime < COOLDOWN_MS) return;
+            if (x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
+            
             const color = document.getElementById('colorPicker').value;
-            
-            // Ключевое изменение: добавляем t (timestamp), чтобы Firebase всегда видел "новый" объект
             db.ref('canvas/' + x + '_' + y).set({ 
-                x, y, color, 
-                uid: currentUser.uid,
-                t: firebase.database.ServerValue.TIMESTAMP 
+                x, y, color, uid: currentUser.uid, t: firebase.database.ServerValue.TIMESTAMP 
             });
-            
-            lastDrawTime = now;
-            updateCooldownBar();
+            lastDrawTime = Date.now();
+            updateCooldown();
         }
 
-        function updateCooldownBar() {
+        function updateCooldown() {
             const bar = document.getElementById('cooldown-bar');
             bar.style.transition = 'none'; bar.style.width = '100%';
-            setTimeout(() => {
-                bar.style.transition = `width ${COOLDOWN_MS}ms linear`;
-                bar.style.width = '0%';
-            }, 20);
+            setTimeout(() => { bar.style.transition = `width ${COOLDOWN_MS}ms linear`; bar.style.width = '0%'; }, 20);
         }
 
-        function drawLine(x1, y1, x2, y2) {
-            let dx = Math.abs(x2-x1), dy = Math.abs(y2-y1), sx = x1<x2?1:-1, sy = y1<y2?1:-1, err = dx-dy;
-            while(true) {
-                sendPixel(x1, y1);
-                if(x1===x2 && y1===y2) break;
-                let e2 = 2*err;
-                if(e2>-dy){err-=dy; x1+=sx;}
-                if(e2<dx){err+=dx; y1+=sy;}
-                if (Date.now() - lastDrawTime < COOLDOWN_MS) break; 
-            }
-        }
+        // --- ИСПРАВЛЕННОЕ УПРАВЛЕНИЕ ---
+        let isDrawing = false, isPanning = false;
+        let lastTouchX = 0, lastTouchY = 0, initialHypot = 0;
 
-        let isDrawing = false, isPanning = false, lastPos = null, lastTouch = {x:0, y:0}, initialDist = null;
-        function getPos(e) {
-            const clientX = (e.touches && e.touches.length > 0) ? e.touches[0].clientX : e.clientX;
-            const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
+        function getPos(clientX, clientY) {
             return {
                 x: Math.floor(((clientX - offset.x) / zoom) / P_SIZE + WORLD_SIZE/2),
-                y: Math.floor(((clientY - offset.y) / zoom) / P_SIZE + WORLD_SIZE/2),
-                cx: clientX, cy: clientY
+                y: Math.floor(((clientY - offset.y) / zoom) / P_SIZE + WORLD_SIZE/2)
             };
         }
+
+        // Мышь
         canvas.addEventListener('mousedown', e => {
-            if(e.button===0) { isDrawing = true; const p = getPos(e); sendPixel(p.x, p.y); lastPos = p; }
+            if(e.button === 0) { isDrawing = true; const p = getPos(e.clientX, e.clientY); sendPixel(p.x, p.y); }
             else isPanning = true;
         });
+
+        // Тач (Телефон)
         canvas.addEventListener('touchstart', e => {
-            if(e.touches.length===1) { isDrawing = true; const p = getPos(e); sendPixel(p.x, p.y); lastPos = p; }
-            else if(e.touches.length===2) { isPanning = true; isDrawing = false; lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY }; initialDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }
+            if(e.touches.length === 1) {
+                isDrawing = true;
+                const p = getPos(e.touches[0].clientX, e.touches[0].clientY);
+                sendPixel(p.x, p.y);
+            } else if(e.touches.length === 2) {
+                isPanning = true;
+                isDrawing = false;
+                lastTouchX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                initialHypot = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            }
         }, {passive: false});
-        window.addEventListener('mousemove', e => {
-            const p = getPos(e);
-            document.getElementById('coords').innerText = `X:${p.x} Y:${p.y}`;
-            if(isDrawing) { drawLine(lastPos.x, lastPos.y, p.x, p.y); lastPos = p; }
-            if(isPanning) { offset.x += e.movementX; offset.y += e.movementY; }
-        });
+
         window.addEventListener('touchmove', e => {
-            const p = getPos(e);
-            if(isDrawing && e.touches.length===1) { e.preventDefault(); drawLine(lastPos.x, lastPos.y, p.x, p.y); lastPos = p; }
-            else if(isPanning && e.touches.length===2) { e.preventDefault(); offset.x += p.cx - lastTouch.x; offset.y += p.cy - lastTouch.y; lastTouch = {x: p.cx, y: p.cy}; const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if(initialDist) { zoom *= d/initialDist; zoom = Math.min(Math.max(zoom, 0.05), 25); initialDist = d; } }
+            e.preventDefault();
+            if(isDrawing && e.touches.length === 1) {
+                const p = getPos(e.touches[0].clientX, e.touches[0].clientY);
+                sendPixel(p.x, p.y);
+            } else if(isPanning && e.touches.length === 2) {
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                const currentHypot = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                
+                // Перемещение
+                offset.x += centerX - lastTouchX;
+                offset.y += centerY - lastTouchY;
+                
+                // Зум
+                const zoomFactor = currentHypot / initialHypot;
+                zoom = Math.min(Math.max(zoom * zoomFactor, 0.05), 30);
+                
+                lastTouchX = centerX;
+                lastTouchY = centerY;
+                initialHypot = currentHypot;
+            }
         }, {passive: false});
-        window.onmouseup = window.ontouchend = () => { isDrawing = isPanning = false; lastPos = initialDist = null; };
-        window.onwheel = e => { zoom *= (e.deltaY>0?0.9:1.1); zoom = Math.min(Math.max(zoom, 0.05), 25); };
+
+        window.addEventListener('mousemove', e => {
+            if(isDrawing) { const p = getPos(e.clientX, e.clientY); sendPixel(p.x, p.y); }
+            if(isPanning) { offset.x += e.movementX; offset.y += e.movementY; }
+            const p = getPos(e.clientX, e.clientY);
+            document.getElementById('coords').innerText = `X:${p.x} Y:${p.y}`;
+        });
+
+        window.onmouseup = window.ontouchend = () => { isDrawing = isPanning = false; };
+        window.onwheel = e => { 
+            const s = e.deltaY > 0 ? 0.9 : 1.1; 
+            zoom = Math.min(Math.max(zoom * s, 0.05), 30); 
+        };
+
         function render() {
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = window.innerWidth * dpr; canvas.height = window.innerHeight * dpr;
-            ctx.scale(dpr, dpr); ctx.imageSmoothingEnabled = false;
-            ctx.fillStyle = "#161617"; ctx.fillRect(0,0,innerWidth,innerHeight);
-            ctx.save(); ctx.translate(offset.x, offset.y); ctx.scale(zoom*P_SIZE, zoom*P_SIZE);
-            ctx.drawImage(world, -WORLD_SIZE/2, -WORLD_SIZE/2); ctx.restore();
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            ctx.imageSmoothingEnabled = false;
+            ctx.fillStyle = "#161617"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.save();
+            ctx.translate(offset.x, offset.y);
+            ctx.scale(zoom * P_SIZE, zoom * P_SIZE);
+            ctx.drawImage(world, -WORLD_SIZE/2, -WORLD_SIZE/2);
+            ctx.restore();
             requestAnimationFrame(render);
         }
         render();
-        canvas.oncontextmenu = () => false;
     </script>
 </body>
 </html>
