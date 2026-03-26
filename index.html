@@ -1,34 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WorldPixel | Fast</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>World Pixel</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: monospace; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; -webkit-user-select: none; }
         canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
         
         #ui { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
-        .panel { background: rgba(0,0,0,0.9); border: 1px solid #0f0; padding: 10px; color: #0f0; pointer-events: auto; font-weight: bold; }
-        input[type="color"] { width: 45px; height: 45px; border: 1px solid #0f0; background: none; cursor: pointer; outline: none; }
-        
-        #cooldown-bar { position: fixed; bottom: 0; left: 0; height: 6px; background: #0f0; width: 0%; z-index: 1000; box-shadow: 0 0 15px #0f0; }
-        #debug { position: fixed; bottom: 20px; left: 10px; color: #0f0; font-size: 12px; pointer-events: none; text-shadow: 1px 1px #000; }
+        .panel { 
+            background: rgba(0,0,0,0.8); 
+            border: 1px solid rgba(255,255,255,0.4); 
+            padding: 8px 12px; 
+            color: #fff; 
+            pointer-events: auto; 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            border-radius: 6px; 
+            font-size: 14px;
+            backdrop-filter: blur(4px);
+        }
+        input[type="color"] { width: 35px; height: 35px; border: 1px solid #fff; background: none; cursor: pointer; padding: 0; border-radius: 4px; }
+        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #00ff00; width: 0%; z-index: 1001; box-shadow: 0 0 10px #00ff00; }
     </style>
 </head>
 <body>
 
-    <div id="cooldown-bar"></div>
-    <div id="debug">SYSTEM READY</div>
+    <div id="cooldown"></div>
 
     <div id="ui">
         <div class="panel">
-            <input type="color" id="colorPicker" value="#000000">
-            <span id="coords">0,0</span>
+            <input type="color" id="colorPicker" value="#ffffff">
+            <span id="coords">0, 0</span>
         </div>
-        <div class="panel">ONLINE: <span id="online">1</span></div>
+        <div class="panel">ОНЛАЙН: <span id="online">1</span></div>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -54,16 +63,14 @@
 
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
     let lastDraw = 0;
-    const CD_TIME = 1000; // Ровно 1 секунда
+    const CD_TIME = 1000;
 
-    function log(m) { document.getElementById('debug').innerText = m; }
-
-    // ЗАГРУЗКА И СИНХРОНИЗАЦИЯ
+    // СИНХРОНИЗАЦИЯ
     db.ref('canvas').on('child_added', s => drawToBuffer(s.val()));
     db.ref('canvas').on('child_changed', s => drawToBuffer(s.val()));
     
-    // Онлайн
-    db.ref('presence').push(true).onDisconnect().remove();
+    const presenceRef = db.ref('presence').push(true);
+    presenceRef.onDisconnect().remove();
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren());
 
     function drawToBuffer(p) {
@@ -74,32 +81,23 @@
 
     function sendPixel(x, y) {
         const now = Date.now();
-        // ПРОВЕРКА КУЛДАУНА
-        if(now - lastDraw < CD_TIME) return; 
-        if(x < 0 || x >= W_SIZE || y < 0 || y >= W_SIZE) return;
+        if(now - lastDraw < CD_TIME || x < 0 || x >= W_SIZE || y < 0 || y >= W_SIZE) return;
 
-        lastDraw = now; // Сразу ставим время, чтобы не было двойных кликов
+        lastDraw = now;
         const color = document.getElementById('colorPicker').value;
-
-        // Полоска кулдауна (сброс и анимация)
-        const bar = document.getElementById('cooldown-bar');
-        bar.style.transition = 'none';
-        bar.style.width = '100%';
+        const bar = document.getElementById('cooldown');
         
-        db.ref('canvas/' + x + '_' + y).set({
-            x, y, color, t: firebase.database.ServerValue.TIMESTAMP
-        }).then(() => log("OK")).catch(e => log("ERR: Rules?"));
+        bar.style.transition = 'none'; bar.style.width = '100%';
+        db.ref('canvas/' + x + '_' + y).set({ x, y, color, t: firebase.database.ServerValue.TIMESTAMP });
 
-        // Запускаем анимацию исчезновения полоски
         setTimeout(() => {
             bar.style.transition = `width ${CD_TIME}ms linear`;
             bar.style.width = '0%';
-        }, 10);
+        }, 20);
     }
 
-    // УПРАВЛЕНИЕ (ОПТИМИЗИРОВАНО)
+    // УПРАВЛЕНИЕ
     let isDraw = false, isPan = false, lastD = 0, lastM = {x:0, y:0};
-
     function getP(cx, cy) {
         return {
             x: Math.floor((cx - offset.x) / zoom + W_SIZE/2),
@@ -107,28 +105,21 @@
         };
     }
 
-    // МЫШЬ (ПК)
     canvas.onmousedown = e => { 
-        if(e.button === 0) { 
-            isDraw = true; 
-            const p = getP(e.clientX, e.clientY);
-            sendPixel(p.x, p.y);
-        } else isPan = true; 
+        if(e.button === 0) { isDraw = true; const p = getP(e.clientX, e.clientY); sendPixel(p.x, p.y); } 
+        else isPan = true; 
     };
 
     window.onmousemove = e => {
         const p = getP(e.clientX, e.clientY);
-        document.getElementById('coords').innerText = p.x + "," + p.y;
+        document.getElementById('coords').innerText = `${p.x}, ${p.y}`;
         if(isDraw) sendPixel(p.x, p.y);
         if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
 
-    // ТАЧ (Телефон)
     canvas.addEventListener('touchstart', e => {
         if(e.touches.length === 1) {
-            isDraw = true; 
-            const p = getP(e.touches[0].clientX, e.touches[0].clientY); 
-            sendPixel(p.x, p.y);
+            isDraw = true; const p = getP(e.touches[0].clientX, e.touches[0].clientY); sendPixel(p.x, p.y);
         } else if(e.touches.length === 2) {
             isPan = true; isDraw = false;
             lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -137,11 +128,10 @@
     }, {passive: false});
 
     window.addEventListener('touchmove', e => {
-        e.preventDefault();
         if(isDraw && e.touches.length === 1) {
-            const p = getP(e.touches[0].clientX, e.touches[0].clientY);
-            sendPixel(p.x, p.y);
+            e.preventDefault(); const p = getP(e.touches[0].clientX, e.touches[0].clientY); sendPixel(p.x, p.y);
         } else if(isPan && e.touches.length === 2) {
+            e.preventDefault();
             const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const m = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
             offset.x += m.x - lastM.x; offset.y += m.y - lastM.y;
@@ -153,14 +143,24 @@
     window.onmouseup = window.ontouchend = () => { isDraw = isPan = false; };
     window.onwheel = e => { zoom = Math.min(Math.max(zoom * (e.deltaY < 0 ? 1.2 : 0.8), 0.1), 80); };
 
+    function drawGrid() {
+        if (zoom < 15) return;
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.lineWidth = 1 / zoom;
+        for (let x = 0; x <= W_SIZE; x++) { ctx.moveTo(x - W_SIZE/2, -W_SIZE/2); ctx.lineTo(x - W_SIZE/2, W_SIZE/2); }
+        for (let y = 0; y <= W_SIZE; y++) { ctx.moveTo(-W_SIZE/2, y - W_SIZE/2); ctx.lineTo(W_SIZE/2, y - W_SIZE/2); }
+        ctx.stroke();
+    }
+
     function render() {
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         ctx.imageSmoothingEnabled = false;
         ctx.fillStyle = "#111"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.save();
-        ctx.translate(offset.x, offset.y);
-        ctx.scale(zoom, zoom);
+        ctx.translate(offset.x, offset.y); ctx.scale(zoom, zoom);
         ctx.drawImage(world, -W_SIZE/2, -W_SIZE/2);
+        drawGrid();
         ctx.restore();
         requestAnimationFrame(render);
     }
