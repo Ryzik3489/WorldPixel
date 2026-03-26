@@ -2,55 +2,47 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>WorldPixel | Stable</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WorldPixel</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; touch-action: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Consolas', monospace; touch-action: none; }
         canvas { display: block; image-rendering: pixelated; }
-        
-        /* Экран загрузки и входа */
-        #overlay { 
-            position: fixed; inset: 0; background: #000; z-index: 9999; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; color: #0f0;
-        }
-        .btn { 
-            background: #0f0; color: #000; border: none; padding: 15px 30px; 
-            font-size: 1.2rem; font-weight: bold; cursor: pointer; margin-top: 20px;
-        }
-        
-        /* Интерфейс */
+        #overlay { position: fixed; inset: 0; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #0f0; text-align: center; }
+        .btn { background: #0f0; color: #000; border: none; padding: 20px 40px; font-size: 20px; font-weight: bold; cursor: pointer; margin-top: 20px; box-shadow: 0 0 20px #0f0; }
         #ui { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
-        .panel { background: rgba(0,0,0,0.85); border: 1px solid #0f0; padding: 8px; color: #0f0; pointer-events: auto; }
-        input[type="color"] { width: 40px; height: 40px; border: 1px solid #0f0; background: none; vertical-align: middle; }
-        
-        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #0f0; width: 0%; z-index: 1001; }
+        .panel { background: rgba(0,0,0,0.9); border: 1px solid #0f0; padding: 10px; color: #0f0; pointer-events: auto; }
+        input[type="color"] { width: 45px; height: 45px; border: 1px solid #0f0; background: none; cursor: pointer; }
+        #debug-log { position: fixed; bottom: 50px; left: 10px; color: #0f0; font-size: 10px; pointer-events: none; }
+        #cooldown-bar { position: fixed; bottom: 0; left: 0; height: 5px; background: #0f0; width: 0%; z-index: 1000; }
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <div id="overlay">
-        <h1 id="status-text">INITIALIZING...</h1>
-        <button id="btn-auth" class="btn hidden">LOGIN TO DRAW</button>
+        <h1>WORLD_PIXEL_V11</h1>
+        <p id="status">CHECKING AUTH...</p>
+        <button id="btn-login" class="btn hidden">LOGIN WITH GOOGLE</button>
     </div>
 
-    <div id="cooldown"></div>
+    <div id="debug-log"></div>
+    <div id="cooldown-bar"></div>
 
     <div id="ui" class="hidden">
         <div class="panel">
             <input type="color" id="colorPicker" value="#000000">
             <span id="coords">0,0</span>
         </div>
-        <div class="panel">📡 <span id="online">0</span></div>
+        <div class="panel">ONLINE: <span id="online">0</span></div>
     </div>
 
     <canvas id="canvas"></canvas>
 
 <script>
-    const config = {
+    const firebaseConfig = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
         authDomain: "doodle-102.firebaseapp.com",
         projectId: "doodle-102",
@@ -58,7 +50,7 @@
         appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
     };
 
-    firebase.initializeApp(config);
+    firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
     const auth = firebase.auth();
 
@@ -69,47 +61,49 @@
     const W_SIZE = 2000;
 
     world.width = world.height = W_SIZE;
-    wctx.fillStyle = "#FFFFFF";
-    wctx.fillRect(0, 0, W_SIZE, W_SIZE);
+    wctx.fillStyle = "white"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
 
-    let zoom = 4.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
+    let zoom = 5.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
     let user = null, lastDraw = 0;
 
-    // СИСТЕМА ВХОДА (REDIRECT для мобилок)
-    const btnAuth = document.getElementById('btn-auth');
-    const statusText = document.getElementById('status-text');
+    function log(msg) {
+        const d = document.getElementById('debug-log');
+        d.innerText = msg;
+        setTimeout(() => d.innerText = "", 2000);
+    }
 
-    btnAuth.onclick = () => auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+    // ЛОГИН (Используем Redirect для телефонов)
+    document.getElementById('btn-login').onclick = () => auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
 
     auth.onAuthStateChanged(u => {
         if(u) {
             user = u;
             document.getElementById('overlay').classList.add('hidden');
             document.getElementById('ui').classList.remove('hidden');
-            startApp();
+            initApp();
         } else {
-            statusText.innerText = "WORLD_PIXEL_V10";
-            btnAuth.classList.remove('hidden');
+            document.getElementById('status').innerText = "AUTHORIZATION REQUIRED";
+            document.getElementById('btn-login').classList.remove('hidden');
         }
     });
 
-    function startApp() {
-        // Загружаем данные и слушаем обновления
+    function initApp() {
         const canvasRef = db.ref('canvas');
         
-        // Быстрая отрисовка изменений
+        // 1. Первичная загрузка всей базы (чтобы на компе всё появилось сразу)
+        canvasRef.once('value', snap => {
+            const data = snap.val();
+            if(data) Object.values(data).forEach(p => drawToBuffer(p));
+            log("DATABASE LOADED");
+        });
+
+        // 2. Живое обновление
         canvasRef.on('child_added', s => drawToBuffer(s.val()));
         canvasRef.on('child_changed', s => drawToBuffer(s.val()));
-        
-        // Онлайн статус
-        const presence = db.ref('presence').push(true);
-        presence.onDisconnect().remove();
-        db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren());
 
-        // Авто-реконнект если пропал инет
-        db.ref(".info/connected").on("value", (snap) => {
-            if (snap.val() === false) console.log("Lost connection...");
-        });
+        // Онлайн
+        db.ref('presence').push(true).onDisconnect().remove();
+        db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren());
     }
 
     function drawToBuffer(p) {
@@ -118,22 +112,27 @@
         wctx.fillRect(p.x, p.y, 1, 1);
     }
 
-    function send(x, y) {
+    function sendPixel(x, y) {
         if(!user || Date.now() - lastDraw < 1000) return;
         if(x < 0 || x >= W_SIZE || y < 0 || y >= W_SIZE) return;
 
         const color = document.getElementById('colorPicker').value;
+        
+        // Сохраняем и ждем подтверждения от сервера
         db.ref('canvas/' + x + '_' + y).set({
-            x, y, color, t: firebase.database.ServerValue.TIMESTAMP
+            x, y, color, uid: user.uid, t: firebase.database.ServerValue.TIMESTAMP
+        }, (error) => {
+            if (error) log("FAILED: " + error.message);
+            else log("PIXEL SENT!"); 
         });
         
         lastDraw = Date.now();
-        const bar = document.getElementById('cooldown');
+        const bar = document.getElementById('cooldown-bar');
         bar.style.transition = 'none'; bar.style.width = '100%';
         setTimeout(() => { bar.style.transition = 'width 1s linear'; bar.style.width = '0%'; }, 50);
     }
 
-    // УПРАВЛЕНИЕ
+    // УПРАВЛЕНИЕ (ПК + МОБИЛКИ)
     let isDraw = false, isPan = false, lastD = 0, lastM = {x:0, y:0};
 
     function getP(cx, cy) {
@@ -143,10 +142,11 @@
         };
     }
 
-    // Тач (Телефон)
     canvas.addEventListener('touchstart', e => {
         if(e.touches.length === 1) {
-            isDraw = true; const p = getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x, p.y);
+            isDraw = true; 
+            const p = getP(e.touches[0].clientX, e.touches[0].clientY);
+            sendPixel(p.x, p.y);
         } else if(e.touches.length === 2) {
             isPan = true; isDraw = false;
             lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -155,10 +155,12 @@
     }, {passive: false});
 
     window.addEventListener('touchmove', e => {
-        e.preventDefault();
         if(isDraw && e.touches.length === 1) {
-            const p = getP(e.touches[0].clientX, e.touches[0].clientY); send(p.x, p.y);
+            e.preventDefault();
+            const p = getP(e.touches[0].clientX, e.touches[0].clientY);
+            sendPixel(p.x, p.y);
         } else if(isPan && e.touches.length === 2) {
+            e.preventDefault();
             const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const m = { x: (e.touches[0].clientX + e.touches[1].clientX)/2, y: (e.touches[0].clientY + e.touches[1].clientY)/2 };
             offset.x += m.x - lastM.x; offset.y += m.y - lastM.y;
@@ -167,12 +169,11 @@
         }
     }, {passive: false});
 
-    // Мышь (ПК)
-    canvas.onmousedown = e => { if(e.button===0) isDraw = true; else isPan = true; };
+    canvas.onmousedown = e => { if(e.button === 0) isDraw = true; else isPan = true; };
     window.onmousemove = e => {
         const p = getP(e.clientX, e.clientY);
         document.getElementById('coords').innerText = p.x + "," + p.y;
-        if(isDraw) send(p.x, p.y);
+        if(isDraw) sendPixel(p.x, p.y);
         if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
     window.onmouseup = window.ontouchend = () => { isDraw = isPan = false; };
