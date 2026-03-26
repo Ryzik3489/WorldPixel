@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FluxPixel - Auth Edition</title>
+    <title>WorldPixel | Official Canvas</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
@@ -11,25 +11,41 @@
         body { margin: 0; overflow: hidden; background: #0c0c0d; font-family: 'Consolas', monospace; touch-action: none; user-select: none; }
         :root { --primary: #0f0; --bg: rgba(10, 10, 12, 0.95); }
 
-        canvas { display: block; image-rendering: pixelated; background: #fff; }
+        canvas { display: block; image-rendering: pixelated; background: #fff; cursor: crosshair; }
         
+        /* UI Elements */
         #hud { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
-        .panel { background: var(--bg); padding: 8px 12px; border: 1px solid var(--primary); pointer-events: auto; color: var(--primary); border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+        .panel { background: var(--bg); padding: 8px 12px; border: 1px solid var(--primary); pointer-events: auto; color: var(--primary); border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 10px rgba(0,255,0,0.1); }
         
-        #login-screen { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: var(--primary); }
-        button { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 10px 20px; cursor: pointer; font-family: inherit; transition: 0.3s; }
-        button:hover { background: var(--primary); color: #000; }
+        #login-screen { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: var(--primary); text-align: center; border: 5px solid #111; }
+        button { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 12px 24px; cursor: pointer; font-family: inherit; font-weight: bold; transition: 0.3s; margin-top: 20px; text-transform: uppercase; }
+        button:hover { background: var(--primary); color: #000; box-shadow: 0 0 20px var(--primary); }
 
-        input[type="color"] { border: 1px solid var(--primary); width: 30px; height: 30px; cursor: pointer; background: none; }
+        input[type="color"] { border: 1px solid var(--primary); width: 30px; height: 30px; cursor: pointer; background: none; padding: 0; outline: none; }
         .hidden { display: none !important; }
+
+        /* Cooldown Bar */
+        #cooldown-container { position: fixed; bottom: 0; left: 0; width: 100%; height: 4px; background: rgba(0,0,0,0.7); z-index: 1001; }
+        #cooldown-bar { width: 0%; height: 100%; background: var(--primary); box-shadow: 0 0 15px var(--primary); }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
-        <h1>FLUX_PIXEL_SYSTEM</h1>
-        <p>Для доступа к холсту требуется авторизация</p>
-        <button id="btn-login">ВОЙТИ ЧЕРЕЗ GOOGLE</button>
+        <pre style="font-size: 8px; line-height: 8px; margin-bottom: 20px;">
+██╗    ██╗ ██████╗ ██████╗ ██╗     ██████╗ ██████╗ ██╗██╗  ██╗███████╗██╗     
+██║    ██║██╔═══██╗██╔══██╗██║     ██╔══██╗██╔══██╗██║╚██╗██╔╝██╔════╝██║     
+██║ █╗ ██║██║   ██║██████╔╝██║     ██║  ██║██████╔╝██║ ╚███╔╝ █████╗  ██║     
+██║███╗██║██║   ██║██╔══██╗██║     ██║  ██║██╔═══╝ ██║ ██╔██╗ ██╔══╝  ██║     
+╚███╔███╔╝╚██████╔╝██║  ██║███████╗██████╔╝██║     ██║██╔╝ ██╗███████╗███████╗
+ ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝
+        </pre>
+        <p>SYSTEM STATUS: ENCRYPTED. AUTHORIZATION REQUIRED.</p>
+        <button id="btn-login">Connect to WorldPixel</button>
+    </div>
+
+    <div id="cooldown-container">
+        <div id="cooldown-bar"></div>
     </div>
 
     <div id="hud" class="hidden">
@@ -38,9 +54,7 @@
             <span id="coords">X:0 Y:0</span>
         </div>
         <div class="panel">
-            <span id="user-name">Загрузка...</span>
-            | ONLINE: <span id="online-count">0</span>
-            <button id="btn-logout" style="padding: 2px 5px; font-size: 10px;">ВЫХОД</button>
+            <span id="user-name">...</span> | ONLINE: <span id="online-count">0</span>
         </div>
     </div>
 
@@ -71,20 +85,34 @@
         let zoom = 1.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
         let currentUser = null;
 
+        // Cooldown Logic
+        let lastDrawTime = 0;
+        const COOLDOWN_MS = 1000; 
+
         world.width = WORLD_SIZE; world.height = WORLD_SIZE;
         wctx.fillStyle = "white"; wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-        // --- АВТОРИЗАЦИЯ ---
+        // ASCII Art for Console
+        console.log("%cWorldPixel V7 Loaded", "color: #0f0; font-weight: bold; font-size: 20px;");
+
+        // Auth & Ban Logic
         document.getElementById('btn-login').onclick = () => auth.signInWithPopup(provider);
-        document.getElementById('btn-logout').onclick = () => auth.signOut();
 
         auth.onAuthStateChanged(user => {
             if (user) {
+                db.ref('banned_users/' + user.uid).on('value', snap => {
+                    if (snap.val() === true) {
+                        alert("ACCESS DENIED: YOU ARE BANNED.");
+                        auth.signOut();
+                        location.reload();
+                    }
+                });
+
                 currentUser = user;
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('hud').classList.remove('hidden');
-                document.getElementById('user-name').innerText = user.displayName.split(' ')[0].toUpperCase();
-                initGame();
+                document.getElementById('user-name').innerText = user.displayName.toUpperCase();
+                initWorld();
             } else {
                 currentUser = null;
                 document.getElementById('login-screen').classList.remove('hidden');
@@ -92,24 +120,49 @@
             }
         });
 
-        function initGame() {
+        function initWorld() {
             db.ref('canvas').on('child_added', s => {
                 const d = s.val();
                 wctx.fillStyle = d.color;
                 wctx.fillRect(d.x, d.y, 1, 1);
             });
             
+            db.ref('canvas').on('child_removed', () => {
+                wctx.fillStyle = "white";
+                wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+            });
+
             const presenceRef = db.ref('presence').push(true);
             presenceRef.onDisconnect().remove();
-            db.ref('presence').on('value', s => { document.getElementById('online-count').innerText = s.numChildren(); });
+            db.ref('presence').on('value', s => { 
+                document.getElementById('online-count').innerText = s.numChildren(); 
+            });
         }
 
+        // --- DRAWING WITH COOLDOWN ---
         function sendPixel(x, y) {
             if (!currentUser || x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
-            db.ref('canvas/' + x + '_' + y).set({ x, y, color: document.getElementById('colorPicker').value, uid: currentUser.uid });
+
+            const now = Date.now();
+            if (now - lastDrawTime < COOLDOWN_MS) return;
+
+            const color = document.getElementById('colorPicker').value;
+            db.ref('canvas/' + x + '_' + y).set({ x, y, color, uid: currentUser.uid });
+            
+            lastDrawTime = now;
+            updateCooldownBar();
         }
 
-        // --- РИСОВАНИЕ (ЛИНИИ) ---
+        function updateCooldownBar() {
+            const bar = document.getElementById('cooldown-bar');
+            bar.style.transition = 'none';
+            bar.style.width = '100%';
+            setTimeout(() => {
+                bar.style.transition = `width ${COOLDOWN_MS}ms linear`;
+                bar.style.width = '0%';
+            }, 20);
+        }
+
         function drawLine(x1, y1, x2, y2) {
             let dx = Math.abs(x2-x1), dy = Math.abs(y2-y1), sx = x1<x2?1:-1, sy = y1<y2?1:-1, err = dx-dy;
             while(true) {
@@ -118,10 +171,12 @@
                 let e2 = 2*err;
                 if(e2>-dy){err-=dy; x1+=sx;}
                 if(e2<dx){err+=dx; y1+=sy;}
+                // Линии тоже ограничены кулдауном
+                if (Date.now() - lastDrawTime < COOLDOWN_MS) break; 
             }
         }
 
-        // --- УПРАВЛЕНИЕ ---
+        // --- CONTROLS ---
         let isDrawing = false, isPanning = false, lastPos = null, lastTouch = {x:0, y:0}, initialDist = null;
 
         function getPos(e) {
@@ -168,8 +223,7 @@
             }
         }, {passive: false});
 
-        const stop = () => { isDrawing = isPanning = false; lastPos = initialDist = null; };
-        window.onmouseup = window.ontouchend = stop;
+        window.onmouseup = window.ontouchend = () => { isDrawing = isPanning = false; lastPos = initialDist = null; };
         window.onwheel = e => { zoom *= (e.deltaY>0?0.9:1.1); zoom = Math.min(Math.max(zoom, 0.05), 25); };
 
         function render() {
