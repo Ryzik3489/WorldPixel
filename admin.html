@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>FluxPixel - ADMIN PANEL</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <style>
+        body { background: #050505; color: #0f0; font-family: 'Courier New', monospace; padding: 20px; }
+        .card { border: 1px solid #0f0; padding: 15px; margin-bottom: 20px; background: #0a0a0a; }
+        h1 { border-bottom: 2px solid #0f0; padding-bottom: 10px; }
+        button { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0f0; color: #000; }
+        .danger { border-color: #f00; color: #f00; }
+        .danger:hover { background: #f00; color: #fff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        .banned { color: #f00; }
+    </style>
+</head>
+<body>
+
+    <h1>FLUX_PIXEL // ADMIN_CORE</h1>
+
+    <div id="auth-check" class="card">
+        <p>Статус: <span id="auth-status">Проверка авторизации...</span></p>
+        <button id="btn-login">ВОЙТИ КАК АДМИН</button>
+    </div>
+
+    <div id="admin-content" style="display:none;">
+        <div class="card">
+            <h3>УПРАВЛЕНИЕ ХОЛСТОМ</h3>
+            <p>Внимание: действие необратимо!</p>
+            <button class="danger" id="btn-clear-canvas">ОЧИСТИТЬ ВЕСЬ ХОЛСТ</button>
+        </div>
+
+        <div class="card">
+            <h3>СПИСОК ИГРОКОВ (АКТИВНОСТЬ)</h3>
+            <table id="users-table">
+                <thead>
+                    <tr>
+                        <th>UID пользователя</th>
+                        <th>Статус</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
+            authDomain: "doodle-102.firebaseapp.com",
+            projectId: "doodle-102",
+            databaseURL: "https://doodle-102-default-rtdb.firebaseio.com",
+            appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const auth = firebase.auth();
+
+        // Вход
+        document.getElementById('btn-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('auth-status').innerText = "АДМИН: " + user.email;
+                document.getElementById('admin-content').style.display = "block";
+                loadUsers();
+            } else {
+                document.getElementById('auth-status').innerText = "НЕ АВТОРИЗОВАН";
+                document.getElementById('admin-content').style.display = "none";
+            }
+        });
+
+        // Очистка холста
+        document.getElementById('btn-clear-canvas').onclick = () => {
+            if (confirm("ТЫ УВЕРЕН? Все рисунки будут удалены навсегда!")) {
+                db.ref('canvas').remove()
+                    .then(() => alert("Холст дефрагментирован (очищен)"))
+                    .catch(err => alert("Ошибка доступа: " + err.message));
+            }
+        };
+
+        // Загрузка пользователей из истории рисования
+        function loadUsers() {
+            const tbody = document.querySelector('#users-table tbody');
+            
+            // Получаем список забаненных
+            db.ref('banned_users').on('value', bannedSnap => {
+                const bannedList = bannedSnap.val() || {};
+                
+                // Получаем список тех, кто рисовал (из базы холста)
+                db.ref('canvas').limitToLast(500).once('value', canvasSnap => {
+                    const pixels = canvasSnap.val() || {};
+                    const uniqueUsers = new Set();
+                    Object.values(pixels).forEach(p => if(p.uid) uniqueUsers.add(p.uid));
+
+                    tbody.innerHTML = '';
+                    uniqueUsers.forEach(uid => {
+                        const isBanned = bannedList[uid];
+                        const row = `
+                            <tr>
+                                <td>${uid}</td>
+                                <td class="${isBanned ? 'banned' : ''}">${isBanned ? 'ЗАБАНЕН' : 'АКТИВЕН'}</td>
+                                <td>
+                                    ${isBanned 
+                                        ? `<button onclick="unban('${uid}')">РАЗБАНИТЬ</button>` 
+                                        : `<button class="danger" onclick="ban('${uid}')">БАН</button>`}
+                                </td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                });
+            });
+        }
+
+        window.ban = (uid) => {
+            db.ref('banned_users/' + uid).set(true);
+        };
+
+        window.unban = (uid) => {
+            db.ref('banned_users/' + uid).remove();
+        };
+    </script>
+</body>
+</html>
