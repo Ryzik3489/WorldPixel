@@ -13,20 +13,27 @@
             font-family: sans-serif; touch-action: none; -webkit-user-select: none; 
         }
         canvas { display: block; image-rendering: pixelated; }
+
+        /* ИНТЕРФЕЙС */
         #ui-top { position: fixed; top: 15px; left: 15px; right: 15px; pointer-events: none; z-index: 1000; display: flex; justify-content: space-between; }
         .panel { 
             background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
             padding: 6px 12px; border-radius: 10px; backdrop-filter: blur(10px);
             pointer-events: auto; font-size: 13px; font-weight: bold; display: flex; gap: 12px; align-items: center;
         }
+
+        /* ЦВЕТ ИЗ БРАУЗЕРА */
         input[type="color"] { width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0; }
         input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; }
+
+        /* ЧАТ */
         #chat-container { position: fixed; bottom: 20px; left: 15px; width: 240px; pointer-events: auto; z-index: 1000; }
-        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; }
-        #chat-messages { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
-        .msg { background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; font-size: 11px; animation: fO 5s forwards; }
+        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; font-size: 14px; }
+        #chat-messages { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; pointer-events: none; }
+        .msg { background: rgba(255,255,255,0.85); padding: 5px 10px; border-radius: 8px; font-size: 12px; border: 1px solid rgba(0,0,0,0.05); animation: fO 8s forwards; width: fit-content; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        
         #cooldown { position: fixed; bottom: 0; left: 0; height: 3px; background: #000; width: 0%; z-index: 1001; }
-        @keyframes fO { 0%, 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-3px); } }
+        @keyframes fO { 0%, 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-5px); } }
     </style>
 </head>
 <body>
@@ -35,7 +42,7 @@
         <div class="panel"><input type="color" id="colorPicker" value="#ff0000"><span id="coords">0, 0</span></div>
         <div class="panel">ОНЛАЙН: <span id="online">1</span></div>
     </div>
-    <div id="chat-container"><div id="chat-messages"></div><input type="text" id="chat-input" placeholder="Чат..." maxlength="50"></div>
+    <div id="chat-container"><div id="chat-messages"></div><input type="text" id="chat-input" placeholder="Сообщение..." maxlength="50"></div>
     <canvas id="canvas"></canvas>
 
 <script>
@@ -50,23 +57,39 @@
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
     const colorInput = document.getElementById('colorPicker');
 
-    // РЕНДЕР ПИКСЕЛЕЙ ИЗ БД
+    // ХОЛСТ
     db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); } });
     db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); } });
     
-    // ПРИСУТСТВИЕ И ЧАТ
+    // ОНЛАЙН
     const myPres = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { if(s.val()){ myPres.set(true); myPres.onDisconnect().remove(); } });
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
+
+    // ЖИВОЙ ЧАТ
     const chatIn = document.getElementById('chat-input'), chatMsgs = document.getElementById('chat-messages');
-    chatIn.onkeydown = e => { if(e.key==='Enter' && chatIn.value.trim()){ db.ref('chat').push({msg: chatIn.value, t: Date.now()}); chatIn.value=''; } };
-    db.ref('chat').limitToLast(3).on('child_added', s => {
-        const m = document.createElement('div'); m.className='msg'; m.innerText=s.val().msg;
-        chatMsgs.appendChild(m); setTimeout(()=>m.remove(), 5000);
+    chatIn.onkeydown = e => {
+        if (e.key === 'Enter' && chatIn.value.trim()) {
+            db.ref('chat').push({ msg: chatIn.value.trim(), t: firebase.database.ServerValue.TIMESTAMP });
+            chatIn.value = '';
+        }
+    };
+    db.ref('chat').limitToLast(15).on('child_added', s => {
+        const d = s.val();
+        if (d && d.msg) {
+            const m = document.createElement('div'); m.className = 'msg'; m.innerText = d.msg;
+            chatMsgs.appendChild(m); setTimeout(() => m.remove(), 8500);
+        }
     });
 
+    // ЛОГИКА ЗУМА И ПЕРЕМЕЩЕНИЯ
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
-    
+    function applyZoom(delta, centerX, centerY) {
+        const oldZ = zoom; zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
+        offset.x = centerX - (centerX - offset.x) * (zoom / oldZ);
+        offset.y = centerY - (centerY - offset.y) * (zoom / oldZ);
+    }
+
     function send(x, y) {
         if(Date.now()-lastDraw < 500 || x<0 || x>=W_SIZE || y<0 || y>=W_SIZE) return;
         lastDraw = Date.now();
@@ -75,41 +98,28 @@
         setTimeout(()=>{ b.style.transition='width 500ms linear'; b.style.width='0%'; }, 20);
     }
 
-    // УМНЫЙ ЗУМ (ZOOM TO POINT)
-    function applyZoom(delta, centerX, centerY) {
-        const oldZoom = zoom;
-        zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
-        // Коррекция смещения, чтобы точка под курсором/пальцами не двигалась
-        offset.x = centerX - (centerX - offset.x) * (zoom / oldZoom);
-        offset.y = centerY - (centerY - offset.y) * (zoom / oldZoom);
-    }
-
     let isPan = false, lastT = {x:0, y:0}, startT = {x:0, y:0}, startTime = 0, lastD = 0;
 
-    // ТЕЛЕФОН
+    // ТЕЛЕФОН (ЗУМ К ПАЛЬЦАМ)
     canvas.addEventListener('touchstart', e => {
         startTime = Date.now();
         if(e.touches.length === 1) {
             startT = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             lastT = { ...startT }; isPan = true;
         } else if(e.touches.length === 2) {
-            isPan = false;
-            lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            isPan = false; lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         }
     }, {passive: false});
 
     window.addEventListener('touchmove', e => {
         e.preventDefault();
         if(e.touches.length === 1 && isPan) {
-            const t = e.touches[0];
-            offset.x += t.clientX - lastT.x; offset.y += t.clientY - lastT.y;
+            const t = e.touches[0]; offset.x += t.clientX - lastT.x; offset.y += t.clientY - lastT.y;
             lastT = { x: t.clientX, y: t.clientY };
         } else if(e.touches.length === 2) {
             const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            applyZoom(d / lastD, midX, midY);
-            lastD = d;
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2, midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            applyZoom(d / lastD, midX, midY); lastD = d;
         }
     }, {passive: false});
 
@@ -120,7 +130,7 @@
         isPan = false;
     });
 
-    // МЫШКА
+    // МЫШКА (ЗУМ К КУРСОРУ)
     window.oncontextmenu = e => e.preventDefault();
     canvas.onmousedown = e => { if(e.button===0) { const p=getP(e.clientX, e.clientY); send(p.x, p.y); } else if(e.button===2) isPan=true; };
     window.onmousemove = e => { 
@@ -128,10 +138,7 @@
         if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
     window.onmouseup = () => isPan = false;
-    window.onwheel = e => {
-        const delta = e.deltaY < 0 ? 1.2 : 0.8;
-        applyZoom(delta, e.clientX, e.clientY);
-    };
+    window.onwheel = e => applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY);
 
     function render() {
         canvas.width=window.innerWidth; canvas.height=window.innerHeight; ctx.imageSmoothingEnabled=false;
