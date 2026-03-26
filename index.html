@@ -2,164 +2,161 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Mega Canvas 2026</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <title>FluxPixel - Persistent Canvas</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a1b; font-family: 'Segoe UI', sans-serif; }
-        canvas { display: block; background: #fff; image-rendering: pixelated; }
+        body { margin: 0; overflow: hidden; background: #0e0e0e; font-family: 'Consolas', monospace; color: #0f0; }
+        canvas { display: block; image-rendering: pixelated; background: #fff; }
         
-        #ui {
-            position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
-            background: #2d2d2e; padding: 10px 25px; border-radius: 50px;
-            display: flex; gap: 15px; align-items: center; border: 1px solid #444; color: #fff;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;
+        #hud {
+            position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none;
+            display: flex; justify-content: space-between; z-index: 100;
         }
-        #online-box {
-            position: fixed; top: 15px; right: 15px; background: rgba(0,0,0,0.8);
-            padding: 10px 15px; border-radius: 8px; color: #0f0; border: 1px solid #333; z-index: 100;
+        .panel {
+            background: rgba(10, 10, 10, 0.9); padding: 10px 15px; border: 1px solid #0f0;
+            pointer-events: auto; box-shadow: 0 0 15px rgba(0,255,0,0.1); border-radius: 4px;
         }
-        input[type="color"] { border: none; width: 30px; height: 30px; cursor: pointer; background: none; }
+        #controls { display: flex; gap: 15px; align-items: center; }
+        input[type="color"] { background: none; border: 1px solid #0f0; width: 30px; height: 30px; cursor: pointer; }
+        #online-stat { font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <input type="color" id="colorPicker" value="#ff0000">
-        <span style="font-size: 14px;">ЛКМ: Рисовать | ПКМ/Колесо: Двигать | Zoom: Колесико</span>
+    <div id="hud">
+        <div id="controls" class="panel">
+            <span>FLUX_PIXEL v1.0</span>
+            <input type="color" id="colorPicker" value="#000000">
+            <span id="coords">X:0 Y:0</span>
+        </div>
+        <div id="online-stat" class="panel">
+            ● ONLINE: <span id="online-count">0</span>
+        </div>
     </div>
-
-    <div id="online-box">Статус: <span id="status">Подключение...</span></div>
 
     <canvas id="canvas"></canvas>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const statusEl = document.getElementById('status');
-        const colorPicker = document.getElementById('colorPicker');
-
-        // Параметры бесконечного холста
-        let cameraOffset = { x: window.innerWidth/2, y: window.innerHeight/2 };
-        let cameraZoom = 1;
-        let MAX_ZOOM = 10;
-        let MIN_ZOOM = 0.1;
-        let SCROLL_SENSITIVITY = 0.001;
-
-        // Размер виртуального холста
-        const WORLD_SIZE = 10000;
-        const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = WORLD_SIZE;
-        offscreenCanvas.height = WORLD_SIZE;
-        const octx = offscreenCanvas.getContext('2d');
-        octx.fillStyle = "white";
-        octx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
-
-        // --- СЕТЬ (Исправлено на SSL) ---
-        const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, "vibe_" + Math.random().toString(16).slice(2));
-        const TOPIC = "vibe_coder_canvas_secure_2026";
-
-        client.connect({ 
-            useSSL: true, 
-            onSuccess: () => {
-                client.subscribe(TOPIC);
-                statusEl.innerText = "В СЕТИ";
-                statusEl.style.color = "#0f0";
-            },
-            onFailure: () => { statusEl.innerText = "ОШИБКА"; }
-        });
-
-        client.onMessageArrived = (msg) => {
-            const d = JSON.parse(msg.payloadString);
-            drawOnWorld(d.x1, d.y1, d.x2, d.y2, d.color);
+        // ТВОЙ КОНФИГ
+        const firebaseConfig = {
+            apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
+            authDomain: "doodle-102.firebaseapp.com",
+            projectId: "doodle-102",
+            storageBucket: "doodle-102.firebasestorage.app",
+            databaseURL: "https://doodle-102-default-rtdb.firebaseio.com", // Проверь этот URL в консоли!
+            messagingSenderId: "296542303637",
+            appId: "1:296542303637:web:950b3cbe547c6d10f3f29c"
         };
 
-        function drawOnWorld(x1, y1, x2, y2, color) {
-            octx.beginPath();
-            octx.strokeStyle = color;
-            octx.lineWidth = 5;
-            octx.lineCap = 'round';
-            octx.moveTo(x1, y1);
-            octx.lineTo(x2, y2);
-            octx.stroke();
+        // Инициализация
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const pixelsRef = db.ref('canvas');
+        const presenceRef = db.ref('presence');
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const colorPicker = document.getElementById('colorPicker');
+        const onlineCountEl = document.getElementById('online-count');
+
+        const P_SIZE = 10; 
+        const WORLD_SIZE = 1000; // 1000x1000 пикселей (хватит надолго)
+        let zoom = 1.0;
+        let offset = { x: window.innerWidth/2, y: window.innerHeight/2 };
+
+        // Внутренний холст (кэш)
+        const world = document.createElement('canvas');
+        world.width = WORLD_SIZE;
+        world.height = WORLD_SIZE;
+        const wctx = world.getContext('2d');
+        wctx.fillStyle = "white";
+        wctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+        // --- ЛОГИКА ОНЛАЙНА ---
+        const myPresence = presenceRef.push(true);
+        myPresence.onDisconnect().remove();
+        presenceRef.on('value', snap => {
+            onlineCountEl.innerText = snap.numChildren();
+        });
+
+        // --- ЗАГРУЗКА И ОБНОВЛЕНИЕ ПИКСЕЛЕЙ ---
+        // Эта функция сработает для каждого существующего пикселя и для новых
+        pixelsRef.on('child_added', snap => {
+            const data = snap.val();
+            drawPixelOnWorld(data.x, data.y, data.color);
+        });
+
+        function drawPixelOnWorld(x, y, color) {
+            wctx.fillStyle = color;
+            wctx.fillRect(x, y, 1, 1);
         }
 
-        // --- РЕНДЕР ---
-        function draw() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.translate(cameraOffset.x, cameraOffset.y);
-            ctx.scale(cameraZoom, cameraZoom);
-            
-            // Рисуем наш огромный холст (центрируем его)
-            ctx.drawImage(offscreenCanvas, -WORLD_SIZE/2, -WORLD_SIZE/2);
-            
-            requestAnimationFrame(draw);
+        function sendPixel(x, y, color) {
+            if (x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return;
+            // Сохраняем в базу по ключу "x_y", чтобы не дублировать точки
+            db.ref('canvas/' + x + '_' + y).set({ x, y, color });
         }
 
         // --- УПРАВЛЕНИЕ ---
-        let isPainting = false;
+        let isDrawing = false;
         let isPanning = false;
-        let startPan = { x: 0, y: 0 };
-        let lastWorldPos = { x: 0, y: 0 };
 
-        function getEventPos(e) {
-            return {
-                x: (e.clientX - cameraOffset.x) / cameraZoom,
-                y: (e.clientY - cameraOffset.y) / cameraZoom
-            };
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor(((e.clientX - offset.x) / zoom) / P_SIZE + WORLD_SIZE/2);
+            const y = Math.floor(((e.clientY - offset.y) / zoom) / P_SIZE + WORLD_SIZE/2);
+            return { x, y };
         }
 
         canvas.addEventListener('mousedown', e => {
-            if (e.button === 0) { // ЛКМ
-                isPainting = true;
-                const pos = getEventPos(e);
-                lastWorldPos = { x: pos.x + WORLD_SIZE/2, y: pos.y + WORLD_SIZE/2 };
-            } else { // ПКМ или Колесо
-                isPanning = true;
-                startPan = { x: e.clientX - cameraOffset.x, y: e.clientY - cameraOffset.y };
-            }
+            if(e.button === 0) isDrawing = true;
+            else isPanning = true;
         });
 
-        canvas.addEventListener('mousemove', e => {
-            if (isPainting) {
-                const pos = getEventPos(e);
-                const currentWorldPos = { x: pos.x + WORLD_SIZE/2, y: pos.y + WORLD_SIZE/2 };
-                
-                // Рисуем у себя
-                drawOnWorld(lastWorldPos.x, lastWorldPos.y, currentWorldPos.x, currentWorldPos.y, colorPicker.value);
-                
-                // Отправляем другим
-                const payload = JSON.stringify({
-                    x1: lastWorldPos.x, y1: lastWorldPos.y, 
-                    x2: currentWorldPos.x, y2: currentWorldPos.y, 
-                    color: colorPicker.value
-                });
-                if(client.isConnected()) {
-                    let message = new Paho.MQTT.Message(payload);
-                    message.destinationName = TOPIC;
-                    client.send(message);
-                }
-                lastWorldPos = currentWorldPos;
-            }
+        window.addEventListener('mousemove', e => {
+            const pos = getMousePos(e);
+            document.getElementById('coords').innerText = `X:${pos.x} Y:${pos.y}`;
+            if (isDrawing) sendPixel(pos.x, pos.y, colorPicker.value);
             if (isPanning) {
-                cameraOffset.x = e.clientX - startPan.x;
-                cameraOffset.y = e.clientY - startPan.y;
+                offset.x += e.movementX;
+                offset.y += e.movementY;
             }
         });
 
-        window.addEventListener('mouseup', () => { isPainting = false; isPanning = false; });
-        canvas.addEventListener('contextmenu', e => e.preventDefault()); // Отключаем меню ПКМ
+        window.addEventListener('mouseup', () => { isDrawing = false; isPanning = false; });
+        
+        // Зум
+        window.addEventListener('wheel', e => {
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            zoom *= delta;
+        }, {passive: false});
 
-        // Зум колесиком
-        canvas.addEventListener('wheel', e => {
-            let zoomAmount = -e.deltaY * SCROLL_SENSITIVITY;
-            cameraZoom += zoomAmount;
-            cameraZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cameraZoom));
-        });
+        // --- ЦИКЛ РЕНДЕРА ---
+        function render() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.fillStyle = "#111";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        draw(); // Запуск цикла отрисовки
+            ctx.save();
+            ctx.translate(offset.x, offset.y);
+            ctx.scale(zoom * P_SIZE, zoom * P_SIZE);
+            ctx.drawImage(world, -WORLD_SIZE/2, -WORLD_SIZE/2);
+            ctx.restore();
+
+            requestAnimationFrame(render);
+        }
+
+        // Авто-очистка раз в год (логика для админа или сервера)
+        function checkYearlyReset() {
+            const now = new Date();
+            if (now.getMonth() === 0 && now.getDate() === 1) {
+                // pixelsRef.remove(); // Включи это, если хочешь полную очистку в НГ
+            }
+        }
+
+        render();
     </script>
 </body>
 </html>
