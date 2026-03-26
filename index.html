@@ -14,45 +14,50 @@
         }
         canvas { display: block; image-rendering: pixelated; }
 
-        /* ИНТЕРФЕЙС */
-        #ui-top { position: fixed; top: 10px; left: 10px; right: 10px; pointer-events: none; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
-        .info-bar { display: flex; justify-content: space-between; }
+        /* МИНИМАЛИСТИЧНЫЙ ИНТЕРФЕЙС */
+        #ui-top { position: fixed; top: 15px; left: 15px; right: 15px; pointer-events: none; z-index: 1000; display: flex; justify-content: space-between; align-items: flex-start; }
+        
         .panel { 
             background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
             padding: 6px 12px; border-radius: 10px; backdrop-filter: blur(10px);
-            pointer-events: auto; font-size: 12px; font-weight: bold; color: #000;
+            pointer-events: auto; font-size: 13px; font-weight: bold; color: #000;
+            display: flex; gap: 12px; align-items: center;
         }
 
-        .palette { 
-            display: flex; gap: 6px; background: rgba(255, 255, 255, 0.9); 
-            padding: 8px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.1);
-            pointer-events: auto; overflow-x: auto; backdrop-filter: blur(10px);
+        /* РОДНАЯ ПАЛИТРА */
+        input[type="color"] {
+            width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0;
+            -webkit-appearance: none;
         }
-        .color-dot { 
-            min-width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); 
-            cursor: pointer; flex-shrink: 0; box-sizing: border-box;
-        }
-        .color-dot.active { border: 3px solid #000; transform: scale(1.1); }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; }
 
-        #chat-container { position: fixed; bottom: 20px; left: 10px; width: 260px; pointer-events: auto; z-index: 1000; }
-        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; }
-        #chat-messages { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+        /* ЧАТ */
+        #chat-container { position: fixed; bottom: 20px; left: 15px; width: 240px; pointer-events: auto; z-index: 1000; }
+        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; font-size: 13px; }
+        #chat-messages { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; pointer-events: none; }
         .msg { background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; font-size: 11px; border: 1px solid rgba(0,0,0,0.05); animation: fO 5s forwards; width: fit-content; }
         
-        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #ff3333; width: 0%; z-index: 1001; }
+        #cooldown { position: fixed; bottom: 0; left: 0; height: 3px; background: #000; width: 0%; z-index: 1001; }
         @keyframes fO { 0%, 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-3px); } }
     </style>
 </head>
 <body>
     <div id="cooldown"></div>
+    
     <div id="ui-top">
-        <div class="info-bar">
-            <div class="panel" id="coords">0, 0</div>
-            <div class="panel">ОНЛАЙН: <span id="online">1</span></div>
+        <div class="panel">
+            <input type="color" id="colorPicker" value="#ff0000">
+            <span id="coords">0, 0</span>
         </div>
-        <div class="palette" id="palette"></div>
+        <div class="panel">ОНЛАЙН: <span id="online">1</span></div>
     </div>
-    <div id="chat-container"><div id="chat-messages"></div><input type="text" id="chat-input" placeholder="Чат..." maxlength="50"></div>
+
+    <div id="chat-container">
+        <div id="chat-messages"></div>
+        <input type="text" id="chat-input" placeholder="Сообщение..." maxlength="50">
+    </div>
+
     <canvas id="canvas"></canvas>
 
 <script>
@@ -64,25 +69,10 @@
     const W_SIZE = 2000;
     world.width = world.height = W_SIZE; wctx.fillStyle = "#fff"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
 
-    let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0, selectedColor = "#ff0000";
-    const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#000000", "#ffffff", "#ff8800", "#8800ff", "#00ffff", "#ff00ff"];
+    let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
+    const colorInput = document.getElementById('colorPicker');
 
-    // ПАЛИТРА С ФИКСОМ ТАЧА
-    const paletteEl = document.getElementById('palette');
-    colors.forEach(c => {
-        const div = document.createElement('div');
-        div.className = 'color-dot' + (c === selectedColor ? ' active' : '');
-        div.style.background = c;
-        const select = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
-            div.classList.add('active'); selectedColor = c;
-        };
-        div.addEventListener('touchstart', select, {passive: false});
-        div.addEventListener('mousedown', select);
-        paletteEl.appendChild(div);
-    });
-
+    // БАЗА ДАННЫХ
     db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); } });
     db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); } });
     
@@ -90,6 +80,7 @@
     db.ref('.info/connected').on('value', s => { if(s.val()){ myPres.set(true); myPres.onDisconnect().remove(); } });
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
 
+    // ЧАТ
     const chatIn = document.getElementById('chat-input'), chatMsgs = document.getElementById('chat-messages');
     chatIn.onkeydown = e => { if(e.key==='Enter' && chatIn.value.trim()){ db.ref('chat').push({msg: chatIn.value, t: Date.now()}); chatIn.value=''; } };
     db.ref('chat').limitToLast(3).on('child_added', s => {
@@ -98,23 +89,23 @@
     });
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
+    
     function send(x, y) {
         if(Date.now()-lastDraw < 500 || x<0 || x>=W_SIZE || y<0 || y>=W_SIZE) return;
         lastDraw = Date.now();
-        db.ref('canvas/'+x+'_'+y).set({x, y, color: selectedColor});
+        db.ref('canvas/'+x+'_'+y).set({x, y, color: colorInput.value});
         const b = document.getElementById('cooldown'); b.style.transition='none'; b.style.width='100%';
         setTimeout(()=>{ b.style.transition='width 500ms linear'; b.style.width='0%'; }, 20);
     }
 
-    // УПРАВЛЕНИЕ: ТАП = РИСОВАТЬ, СВАЙП = ЛИСТАТЬ
-    let isPan = false, lastTouch = {x:0, y:0}, touchStartPos = {x:0, y:0}, startTime = 0, lastD = 0;
+    // УПРАВЛЕНИЕ ДЛЯ ТЕЛЕФОНА
+    let isPan = false, lastT = {x:0, y:0}, startT = {x:0, y:0}, startTime = 0, lastD = 0;
 
     canvas.addEventListener('touchstart', e => {
         startTime = Date.now();
         if(e.touches.length === 1) {
-            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            lastTouch = { ...touchStartPos };
-            isPan = true;
+            startT = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            lastT = { ...startT }; isPan = true;
         } else if(e.touches.length === 2) {
             lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         }
@@ -123,29 +114,24 @@
     window.addEventListener('touchmove', e => {
         e.preventDefault();
         if(e.touches.length === 1 && isPan) {
-            const touch = e.touches[0];
-            offset.x += touch.clientX - lastTouch.x;
-            offset.y += touch.clientY - lastTouch.y;
-            lastTouch = { x: touch.clientX, y: touch.clientY };
+            const t = e.touches[0];
+            offset.x += t.clientX - lastT.x; offset.y += t.clientY - lastT.y;
+            lastT = { x: t.clientX, y: t.clientY };
         } else if(e.touches.length === 2) {
             const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            zoom = Math.min(Math.max(zoom * (d/lastD), 0.1), 80);
-            lastD = d;
+            zoom = Math.min(Math.max(zoom * (d/lastD), 0.1), 80); lastD = d;
         }
     }, {passive: false});
 
     window.addEventListener('touchend', e => {
-        const duration = Date.now() - startTime;
-        const dist = Math.hypot(lastTouch.x - touchStartPos.x, lastTouch.y - touchStartPos.y);
-        // Если касание было коротким и палец почти не двигался — ставим пиксель
-        if(duration < 200 && dist < 10) {
-            const p = getP(touchStartPos.x, touchStartPos.y);
-            send(p.x, p.y);
+        const dist = Math.hypot(lastT.x - startT.x, lastT.y - startT.y);
+        if(Date.now() - startTime < 150 && dist < 10) {
+            const p = getP(startT.x, startT.y); send(p.x, p.y);
         }
         isPan = false;
     });
 
-    // МЫШКА (ПК)
+    // МЫШКА
     window.oncontextmenu = e => e.preventDefault();
     canvas.onmousedown = e => { if(e.button===0) { const p=getP(e.clientX, e.clientY); send(p.x, p.y); } else if(e.button===2) isPan=true; };
     window.onmousemove = e => { 
@@ -157,7 +143,7 @@
 
     function render() {
         canvas.width=window.innerWidth; canvas.height=window.innerHeight; ctx.imageSmoothingEnabled=false;
-        ctx.fillStyle="#f0f0f0"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle="#f5f5f5"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.save(); ctx.translate(offset.x,offset.y); ctx.scale(zoom,zoom);
         ctx.drawImage(world, -W_SIZE/2, -W_SIZE/2);
         if(zoom>20){ ctx.beginPath(); ctx.strokeStyle="rgba(0,0,0,0.05)"; ctx.lineWidth=0.01;
