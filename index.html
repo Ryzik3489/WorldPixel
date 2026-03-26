@@ -14,37 +14,28 @@
         }
         canvas { display: block; image-rendering: pixelated; }
 
-        /* НОВАЯ ПАНЕЛЬ С ЦВЕТАМИ */
-        #ui-top { position: fixed; top: 15px; left: 10px; right: 10px; pointer-events: none; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
-        .info-bar { display: flex; justify-content: space-between; pointer-events: none; }
-        .panel { 
-            background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
-            padding: 8px 15px; border-radius: 12px; backdrop-filter: blur(10px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); pointer-events: auto; font-size: 13px; font-weight: bold;
-        }
-
-        .palette { 
-            display: flex; gap: 8px; background: rgba(255, 255, 255, 0.9); 
-            padding: 10px; border-radius: 15px; border: 1px solid rgba(0,0,0,0.1);
-            pointer-events: auto; overflow-x: auto; max-width: 100%; backdrop-filter: blur(10px);
-        }
-        .color-dot { 
-            min-width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); 
-            cursor: pointer; transition: transform 0.1s; flex-shrink: 0;
-        }
-        .color-dot.active { transform: scale(1.2); border-color: #000; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
-
-        /* ЧАТ */
-        #chat-container { position: fixed; bottom: 25px; left: 10px; width: calc(100% - 20px); max-width: 280px; pointer-events: auto; z-index: 1000; }
-        #chat-input { width: 100%; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.1); padding: 12px; border-radius: 12px; outline: none; box-sizing: border-box; }
-        #chat-messages { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
-        .msg { background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 8px; font-size: 12px; border: 1px solid rgba(0,0,0,0.05); animation: fO 5s forwards; width: fit-content; }
+       // ПЕРЕПИСАННАЯ ГЕНЕРАЦИЯ ПАЛИТРЫ ДЛЯ ТАЧА
+    const paletteEl = document.getElementById('palette');
+    colors.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'color-dot' + (c === selectedColor ? ' active' : '');
+        div.style.background = c;
         
-        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #ff3333; width: 0%; z-index: 1001; }
-        @keyframes fO { 0%, 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-5px); } }
-    </style>
-</head>
-<body>
+        // Обработчик специально для телефона и мышки сразу
+        const select = (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // Остановка клика, чтобы он не ушел на холст
+            document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+            div.classList.add('active'); 
+            selectedColor = c;
+        };
+
+        div.addEventListener('touchstart', select, {passive: false});
+        div.addEventListener('mousedown', select);
+        
+        paletteEl.appendChild(div);
+    });
+        
     <div id="cooldown"></div>
     <div id="ui-top">
         <div class="info-bar">
