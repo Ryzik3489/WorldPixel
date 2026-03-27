@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Правила | WORLD PIXEL</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Unbounded:wght@900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0e11;
+            --panel: #171c22;
+            --accent: #4285F4;
+            --text: #ffffff;
+            --danger: #ff4444;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 90%;
+            background: var(--panel);
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.05);
+            margin: 20px 0;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 28px;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        h1 {
+            font-size: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--accent);
+            display: inline-block;
+            padding-bottom: 5px;
+        }
+
+        .section {
+            margin-bottom: 25px;
+        }
+
+        .section h3 {
+            color: var(--accent);
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .section p, .section li {
+            font-size: 14px;
+            line-height: 1.6;
+            opacity: 0.8;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .warning {
+            background: rgba(255, 68, 68, 0.1);
+            border-left: 4px solid var(--danger);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+
+        .footer-btns {
+            margin-top: 40px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 15px;
+            border-radius: 12px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: 0.3s;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 20px rgba(66, 133, 244, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .btn-outline:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        @media (max-width: 480px) {
+            .container { padding: 25px; }
+            .footer-btns { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <div class="logo">WORLD<span>PIXEL</span></div>
+            <h1>Пользовательское соглашение</h1>
+        </div>
+
+        <div class="section">
+            <h3>1. Введение</h3>
+            <p>Добро пожаловать в WORLD PIXEL — платформу для совместного творчества в реальном времени. Авторизуясь через Google, вы принимаете данные правила и обязуетесь их соблюдать.</p>
+        </div>
+
+        <div class="section">
+            <h3>2. Правила Контента</h3>
+            <ul>
+                <li><strong>Запрещено:</strong> Изображения порнографического характера (18+), шок-контент и призывы к насилию.</li>
+                <li><strong>Запрещено:</strong> Использование нецензурной лексики и оскорблений в чате.</li>
+                <li><strong>Вандализм:</strong> Закрашивание чужих рисунков является частью игрового процесса («Пиксельные войны»), но массовое вредительство с использованием ПО запрещено.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h3>3. Технические ограничения</h3>
+            <ul>
+                <li>Использование скриптов, кликеров и ботов для автоматической расстановки пикселей запрещено.</li>
+                <li>Один пользователь — один аккаунт.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h3>4. Права Администрации</h3>
+            <p>Администратор (Илья) имеет право блокировать пользователей (бан по UID) за нарушение правил без предварительного уведомления. Администратор оставляет за собой право использовать «Ядерную кнопку» для очистки холста в случае массовых атак.</p>
+        </div>
+
+        <div class="warning">
+            <strong>ВНИМАНИЕ:</strong> Нарушение данных правил приведет к немедленной и пожизненной блокировке вашего Google-аккаунта в системе WORLD PIXEL.
+        </div>
+
+        <div class="footer-btns">
+            <a href="index.html" class="btn btn-primary">Я ПРИНИМАЮ ПРАВИЛА</a>
+            <a href="https://t.me/твой_канал" target="_blank" class="btn btn-outline">ПОДДЕРЖКА В ТГ</a>
+        </div>
+    </div>
+
+</body>
+</html>
