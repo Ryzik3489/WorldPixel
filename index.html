@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>World Pixel | Live</title>
+    <title>World Pixel | Mobile Fixed</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
@@ -14,69 +14,75 @@
         }
         canvas { display: block; image-rendering: pixelated; }
 
-        /* ИНТЕРФЕЙС */
-        #ui-top { position: fixed; top: 15px; left: 15px; right: 15px; pointer-events: none; z-index: 1000; display: flex; justify-content: space-between; gap: 10px; }
+        /* ИНТЕРФЕЙС ВЕРХ (ИСПРАВЛЕНО ДЛЯ МОБИЛОК) */
+        #ui-top { 
+            position: fixed; top: 10px; left: 10px; right: 10px; 
+            pointer-events: none; z-index: 1000; 
+            display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; 
+        }
+        
         .panel { 
-            background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
-            padding: 8px 14px; border-radius: 12px; backdrop-filter: blur(10px);
-            pointer-events: auto; font-size: 14px; font-weight: bold; display: flex; gap: 12px; align-items: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(0,0,0,0.1); 
+            padding: 6px 10px; border-radius: 10px; backdrop-filter: blur(10px);
+            pointer-events: auto; font-size: 13px; font-weight: bold; 
+            display: flex; gap: 8px; align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
 
         #nick-input {
-            border: none; background: rgba(0,0,0,0.05); padding: 5px 10px; border-radius: 8px;
-            font-weight: bold; color: #4285F4; width: 100px; outline: none; font-size: 13px;
+            border: none; background: rgba(0,0,0,0.05); padding: 4px 8px; border-radius: 6px;
+            font-weight: bold; color: #4285F4; width: 80px; outline: none; font-size: 12px;
         }
 
-        input[type="color"] { width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0; }
+        input[type="color"] { width: 28px; height: 28px; border: none; background: none; cursor: pointer; padding: 0; }
 
-        /* ЧАТ И ВСПЛЫВАШКИ */
-        #chat-container { position: fixed; bottom: 25px; left: 15px; width: 300px; pointer-events: auto; z-index: 1000; display: flex; flex-direction: column; }
+        /* КОНТЕЙНЕР ЧАТА */
+        #chat-container { position: fixed; bottom: 20px; left: 10px; right: 10px; max-width: 320px; pointer-events: auto; z-index: 1000; display: flex; flex-direction: column; }
         
         #chat-history { 
-            max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.95); 
-            border-radius: 12px; margin-bottom: 10px; padding: 12px; display: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.1);
+            max-height: 180px; overflow-y: auto; background: rgba(255,255,255,0.95); 
+            border-radius: 12px; margin-bottom: 8px; padding: 10px; display: none;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: 1px solid rgba(0,0,0,0.05);
         }
 
-        #chat-messages { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; pointer-events: none; }
+        #chat-messages { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; pointer-events: none; }
         
-        /* Стиль всплывающего сообщения */
         .msg { 
-            background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 10px; 
-            font-size: 13px; border-left: 4px solid #4285F4; animation: fO 8s forwards; 
-            width: fit-content; box-shadow: 0 4px 10px rgba(0,0,0,0.1); color: #333;
-            backdrop-filter: blur(5px);
+            background: rgba(255,255,255,0.9); padding: 7px 10px; border-radius: 8px; 
+            font-size: 12px; border-left: 3px solid #4285F4; animation: fO 8s forwards; 
+            width: fit-content; max-width: 100%; box-shadow: 0 3px 8px rgba(0,0,0,0.1); color: #333;
         }
 
-        .msg-history { font-size: 13px; margin-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; color: #222; }
+        .msg-history { font-size: 12px; margin-bottom: 5px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 3px; }
         .msg-history b, .msg b { color: #4285F4; }
 
-        #chat-input { width: 100%; background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1); padding: 12px; border-radius: 12px; outline: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        #chat-input { width: 100%; background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; outline: none; box-sizing: border-box; }
         
-        #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #4285F4; width: 0%; z-index: 1001; }
-        @keyframes fO { 0% { opacity: 0; transform: translateY(10px); } 10%, 90% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateX(-20px); } }
+        #cooldown { position: fixed; bottom: 0; left: 0; height: 3px; background: #4285F4; width: 0%; z-index: 1001; }
+        @keyframes fO { 0% { opacity: 0; transform: translateY(5px); } 10%, 90% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateX(-15px); } }
     </style>
 </head>
 <body>
     <div id="cooldown"></div>
     <div id="ui-top">
-        <div style="display: flex; gap: 10px; pointer-events: none;">
-            <div class="panel"><input type="color" id="colorPicker" value="#4285F4"><span id="coords">0, 0</span></div>
-            <div class="panel">НИК: <input type="text" id="nick-input" maxlength="12"></div>
+        <div class="panel">
+            <input type="color" id="colorPicker" value="#4285F4">
+            <span id="coords">0, 0</span>
         </div>
+        <div class="panel">НИК: <input type="text" id="nick-input" maxlength="12"></div>
         <div class="panel">ОНЛАЙН: <span id="online" style="color: #4285F4;">1</span></div>
     </div>
     
     <div id="chat-container">
         <div id="chat-history"></div>
         <div id="chat-messages"></div>
-        <input type="text" id="chat-input" placeholder="Нажми для чата..." maxlength="60">
+        <input type="text" id="chat-input" placeholder="Сообщение..." maxlength="60">
     </div>
 
     <canvas id="canvas"></canvas>
 
 <script>
+    // Твой основной конфиг
     const firebaseConfig = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
         databaseURL: "https://doodle-102-default-rtdb.firebaseio.com"
@@ -85,7 +91,7 @@
     const db = firebase.database();
 
     const nickInput = document.getElementById('nick-input');
-    let userName = localStorage.getItem('worldpixel_name') || "Художник_" + Math.floor(Math.random() * 99);
+    let userName = localStorage.getItem('worldpixel_name') || "Гость_" + Math.floor(Math.random() * 99);
     nickInput.value = userName;
     nickInput.onchange = () => { userName = nickInput.value.trim() || "Аноним"; localStorage.setItem('worldpixel_name', userName); };
 
@@ -99,13 +105,14 @@
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
     const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
 
-    db.ref('canvas').on('child_added', s => { const p = s.val(); wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); });
-    db.ref('canvas').on('child_changed', s => { const p = s.val(); wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); });
+    // Работа с БД
+    db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
+    db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
     const myPres = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { if(s.val()){ myPres.set(true); myPres.onDisconnect().remove(); } });
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
 
-    // ЛОГИКА ЧАТА (ВЕРНУЛ ВСПЛЫВАШКИ)
+    // Чат
     chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
@@ -114,7 +121,6 @@
         }
     };
 
-    chatHist.addEventListener('wheel', e => e.stopPropagation());
     chatHist.addEventListener('touchstart', e => e.stopPropagation());
     chatHist.addEventListener('touchmove', e => e.stopPropagation());
 
@@ -122,26 +128,15 @@
         const d = s.val();
         if (d && d.msg) {
             const sender = d.name || "Аноним";
-
-            // 1. Создаем всплывашку (будет видна ВСЕГДА)
-            const m = document.createElement('div');
-            m.className = 'msg';
-            m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
-            chatMsgs.appendChild(m);
-            setTimeout(() => m.remove(), 7800);
-
-            // 2. Добавляем в историю (видна только при фокусе)
-            const h = document.createElement('div');
-            h.className = 'msg-history';
-            h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
-            chatHist.appendChild(h);
-            chatHist.scrollTop = chatHist.scrollHeight;
-
+            const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
+            chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
+            const h = document.createElement('div'); h.className = 'msg-history'; h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
+            chatHist.appendChild(h); chatHist.scrollTop = chatHist.scrollHeight;
             if (d.name !== userName) notifySound.play().catch(() => {});
         }
     });
 
-    window.addEventListener('contextmenu', e => e.preventDefault());
+    window.oncontextmenu = e => e.preventDefault();
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
     function applyZoom(delta, centerX, centerY) {
@@ -149,6 +144,7 @@
         offset.x = centerX - (centerX - offset.x) * (zoom / oldZ);
         offset.y = centerY - (centerY - offset.y) * (zoom / oldZ);
     }
+
     function send(x, y) {
         if(Date.now()-lastDraw < 500 || x<0 || x>=W_SIZE || y<0 || y>=W_SIZE) return;
         lastDraw = Date.now();
@@ -191,7 +187,7 @@
     }, {passive: false});
 
     window.addEventListener('touchend', () => {
-        if(Date.now() - startTime < 150) { const p = getP(startT.x, startT.y); send(p.x, p.y); }
+        if(Date.now() - startTime < 150) send(getP(startT.x, startT.y).x, getP(startT.x, startT.y).y);
         isPan = false;
     });
 
