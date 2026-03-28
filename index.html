@@ -80,14 +80,14 @@
     <canvas id="canvas"></canvas>
 
 <script>
-   // --- НАСТРОЙКИ ТЕЛЕГРАМ (ПОЛНОСТЬЮ НАСТРОЕНО) ---
-const TG_TOKEN = "8390822032:AAGQP2wmFL8SblWKv-Lj7BSWOUkoCkMBSyk"; 
-const TG_CHAT_ID = "6648834014";
+    // --- НАСТРОЙКИ ТЕЛЕГРАМ ---
+    const TG_TOKEN = "8390822032:AAGQP2wmFL8SblWKv-Lj7BSWOUkoCkMBSyk"; 
+    const TG_CHAT_ID = "6648834014";
 
-function sendLog(text) {
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
-    fetch(url).catch(e => console.error("Ошибка Telegram API. Проверь токен или интернет."));
-}
+    function sendLog(text) {
+        const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
+        fetch(url).catch(e => console.error("TG Error"));
+    }
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
@@ -99,6 +99,7 @@ function sendLog(text) {
     const nickInput = document.getElementById('nick-input');
     let userName = localStorage.getItem('worldpixel_name') || "Гость_" + Math.floor(Math.random() * 99);
     nickInput.value = userName;
+    
     nickInput.onchange = () => { 
         const old = userName;
         userName = nickInput.value.trim() || "Аноним"; 
@@ -116,36 +117,50 @@ function sendLog(text) {
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
     const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
 
-    // Работа с БД
-    db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
-    db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
-    const myPres = db.ref('presence').push();
+    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ ---
+    const myPresRef = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { 
         if(s.val()){ 
-            myPres.set(true); 
-            myPres.onDisconnect().remove(); 
+            // Когда заходим
+            myPresRef.set({ name: userName, status: 'online' });
             sendLog(`🟢 ${userName} зашел на сайт`);
+            
+            // Когда выходим (Firebase удалит запись сам, а мы поймаем это через onChildRemoved)
+            myPresRef.onDisconnect().remove(); 
         } 
     });
+
+    // Слушаем входы/выходы других для логов (Админ-режим)
+    db.ref('presence').on('child_removed', s => {
+        const user = s.val();
+        if(user) sendLog(`🔴 ${user.name || "Кто-то"} вышел`);
+    });
+
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
 
-    // Чат
+    // --- РАБОТА С ХОЛСТОМ ---
+    db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
+    db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
+
+    // --- ЧАТ ---
     chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
-            const msgText = chatIn.value.trim();
-            db.ref('chat').push({ name: userName, msg: msgText, t: firebase.database.ServerValue.TIMESTAMP });
-            sendLog(`💬 [ЧАТ] ${userName}: ${msgText}`);
+            db.ref('chat').push({ name: userName, msg: chatIn.value.trim(), t: firebase.database.ServerValue.TIMESTAMP });
             chatIn.value = '';
         }
     };
 
-    chatHist.addEventListener('touchstart', e => e.stopPropagation());
-    chatHist.addEventListener('touchmove', e => e.stopPropagation());
-
-    db.ref('chat').limitToLast(40).on('child_added', s => {
+    // Слушаем ВСЕ сообщения чата для логов
+    db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
         if (d && d.msg) {
+            // Если сообщение свежее (не старое из истории)
+            if(Date.now() - d.t < 5000) {
+                sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
+            }
+            
+            // Отображение в UI
             const sender = d.name || "Аноним";
             const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
@@ -155,8 +170,7 @@ function sendLog(text) {
         }
     });
 
-    window.oncontextmenu = e => e.preventDefault();
-
+    // --- УПРАВЛЕНИЕ И РЕНДЕР (БЕЗ ИЗМЕНЕНИЙ) ---
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
     function applyZoom(delta, centerX, centerY) {
         const oldZ = zoom; zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
@@ -166,13 +180,8 @@ function sendLog(text) {
 
     function send(x, y) {
         if(Date.now()-lastDraw < 500 || x<0 || x>=W_SIZE || y<0 || y>=W_SIZE) return;
-        const color = document.getElementById('colorPicker').value;
         lastDraw = Date.now();
-        db.ref('canvas/'+x+'_'+y).set({x, y, color: color});
-        
-        // Лог пикселя (можно закомментировать, если спамит)
-        // sendLog(`🖌 ${userName} поставил пиксель [${x}, ${y}]`);
-
+        db.ref('canvas/'+x+'_'+y).set({x, y, color: document.getElementById('colorPicker').value});
         const b = document.getElementById('cooldown'); b.style.transition='none'; b.style.width='100%';
         setTimeout(()=>{ b.style.transition='width 500ms linear'; b.style.width='0%'; }, 20);
     }
