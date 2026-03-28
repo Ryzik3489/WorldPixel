@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>World Pixel | Logs Edition</title>
+    <title>World Pixel</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
@@ -80,14 +80,14 @@
     <canvas id="canvas"></canvas>
 
 <script>
-    // --- НАСТРОЙКИ ТЕЛЕГРАМ ---
-    const TG_TOKEN = "ВАШ_ТОКЕН_БОТА"; 
-    const TG_CHAT_ID = "ВАШ_CHAT_ID";
+   // --- НАСТРОЙКИ ТЕЛЕГРАМ (ПОЛНОСТЬЮ НАСТРОЕНО) ---
+const TG_TOKEN = "8390822032:AAGQP2wmFL8SblWKv-Lj7BSWOUkoCkMBSyk"; 
+const TG_CHAT_ID = "6648834014";
 
-    function sendLog(text) {
-        const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
-        fetch(url).catch(e => console.error("TG Error"));
-    }
+function sendLog(text) {
+    const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
+    fetch(url).catch(e => console.error("Ошибка Telegram API. Проверь токен или интернет."));
+}
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
