@@ -117,20 +117,17 @@
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
     const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
 
-    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ ---
+    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ (ВХОД И ВЫХОД) ---
     const myPresRef = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { 
         if(s.val()){ 
-            // Когда заходим
             myPresRef.set({ name: userName, status: 'online' });
             sendLog(`🟢 ${userName} зашел на сайт`);
-            
-            // Когда выходим (Firebase удалит запись сам, а мы поймаем это через onChildRemoved)
             myPresRef.onDisconnect().remove(); 
         } 
     });
 
-    // Слушаем входы/выходы других для логов (Админ-режим)
+    // Слушаем выходы других игроков
     db.ref('presence').on('child_removed', s => {
         const user = s.val();
         if(user) sendLog(`🔴 ${user.name || "Кто-то"} вышел`);
@@ -151,16 +148,15 @@
         }
     };
 
-    // Слушаем ВСЕ сообщения чата для логов
+    // Слушаем сообщения для логов и UI
     db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
         if (d && d.msg) {
-            // Если сообщение свежее (не старое из истории)
+            // Лог в Телеграм, если сообщение новое
             if(Date.now() - d.t < 5000) {
                 sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
-            
-            // Отображение в UI
+            // Показ в интерфейсе
             const sender = d.name || "Аноним";
             const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
@@ -170,8 +166,11 @@
         }
     });
 
-    // --- УПРАВЛЕНИЕ И РЕНДЕР (БЕЗ ИЗМЕНЕНИЙ) ---
+    // --- УПРАВЛЕНИЕ МЫШЬЮ (ИСПРАВЛЕНО) ---
+    window.oncontextmenu = e => { e.preventDefault(); return false; }; // Блокировка меню
+
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
+    
     function applyZoom(delta, centerX, centerY) {
         const oldZ = zoom; zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
         offset.x = centerX - (centerX - offset.x) * (zoom / oldZ);
@@ -191,16 +190,23 @@
 
     canvas.onmousedown = e => { 
         closeChat(); 
-        if(e.button === 0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
-        else if(e.button === 2) isPan = true; 
+        if(e.button === 0) { // Левая кнопка — рисовать
+            send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
+        }
+        else if(e.button === 2) { // Правая кнопка — только двигать
+            isPan = true; 
+        }
     };
+
     window.onmousemove = e => { 
         const p = getP(e.clientX, e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
         if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
-    window.onmouseup = () => isPan = false;
+
+    window.onmouseup = e => { if(e.button === 2) isPan = false; };
     window.onwheel = e => { if(chatHist.style.display !== 'block') applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY); };
 
+    // --- ТАЧ-УПРАВЛЕНИЕ (ДЛЯ ТЕЛЕФОНОВ) ---
     canvas.addEventListener('touchstart', e => {
         closeChat(); startTime = Date.now();
         if(e.touches.length === 1) { startT = { x: e.touches[0].clientX, y: e.touches[0].clientY }; lastT = {...startT}; isPan = true; }
