@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>World Pixel</title>
+    <title>World Pixel | Live</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
@@ -14,7 +14,7 @@
         }
         canvas { display: block; image-rendering: pixelated; }
 
-        /* ИНТЕРФЕЙС ВЕРХ */
+        /* ИНТЕРФЕЙС */
         #ui-top { position: fixed; top: 15px; left: 15px; right: 15px; pointer-events: none; z-index: 1000; display: flex; justify-content: space-between; gap: 10px; }
         .panel { 
             background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(0,0,0,0.1); 
@@ -23,34 +23,39 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
 
-        /* Поле ввода ника в панели */
         #nick-input {
             border: none; background: rgba(0,0,0,0.05); padding: 5px 10px; border-radius: 8px;
             font-weight: bold; color: #4285F4; width: 100px; outline: none; font-size: 13px;
         }
 
         input[type="color"] { width: 30px; height: 30px; border: none; background: none; cursor: pointer; padding: 0; }
-        input[type="color"]::-webkit-color-swatch { border: 2px solid rgba(0,0,0,0.1); border-radius: 6px; }
 
-        /* ЧАТ */
+        /* ЧАТ И ВСПЛЫВАШКИ */
         #chat-container { position: fixed; bottom: 25px; left: 15px; width: 300px; pointer-events: auto; z-index: 1000; display: flex; flex-direction: column; }
+        
         #chat-history { 
-            max-height: 250px; overflow-y: auto; background: rgba(255,255,255,0.95); 
+            max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.95); 
             border-radius: 12px; margin-bottom: 10px; padding: 12px; display: none;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.1);
-            touch-action: pan-y; /* Позволяет скроллить чат, не двигая холст */
         }
+
         #chat-messages { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; pointer-events: none; }
-        .msg-history { font-size: 13px; margin-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; color: #222; }
-        .msg-history b { color: #4285F4; }
+        
+        /* Стиль всплывающего сообщения */
         .msg { 
-            background: rgba(255,255,255,0.9); padding: 6px 12px; border-radius: 10px; 
-            font-size: 13px; border-left: 4px solid #4285F4; animation: fO 9s forwards; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 10px; 
+            font-size: 13px; border-left: 4px solid #4285F4; animation: fO 8s forwards; 
+            width: fit-content; box-shadow: 0 4px 10px rgba(0,0,0,0.1); color: #333;
+            backdrop-filter: blur(5px);
         }
-        #chat-input { width: 100%; background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1); padding: 12px; border-radius: 12px; outline: none; }
+
+        .msg-history { font-size: 13px; margin-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 4px; color: #222; }
+        .msg-history b, .msg b { color: #4285F4; }
+
+        #chat-input { width: 100%; background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1); padding: 12px; border-radius: 12px; outline: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         
         #cooldown { position: fixed; bottom: 0; left: 0; height: 4px; background: #4285F4; width: 0%; z-index: 1001; }
-        @keyframes fO { 0%, 85% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(-20px); } }
+        @keyframes fO { 0% { opacity: 0; transform: translateY(10px); } 10%, 90% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateX(-20px); } }
     </style>
 </head>
 <body>
@@ -79,15 +84,10 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // СИСТЕМА НИКА
     const nickInput = document.getElementById('nick-input');
     let userName = localStorage.getItem('worldpixel_name') || "Художник_" + Math.floor(Math.random() * 99);
     nickInput.value = userName;
-    
-    nickInput.onchange = () => {
-        userName = nickInput.value.trim() || "Аноним";
-        localStorage.setItem('worldpixel_name', userName);
-    };
+    nickInput.onchange = () => { userName = nickInput.value.trim() || "Аноним"; localStorage.setItem('worldpixel_name', userName); };
 
     const notifySound = new Audio('https://www.soundjay.com/buttons/sounds/button-50.mp3');
     const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d', { alpha: false });
@@ -97,16 +97,15 @@
     wctx.fillStyle = "#ffffff"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
 
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
-    const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history');
+    const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
 
-    // БАЗА ДАННЫХ
     db.ref('canvas').on('child_added', s => { const p = s.val(); wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); });
     db.ref('canvas').on('child_changed', s => { const p = s.val(); wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); });
     const myPres = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { if(s.val()){ myPres.set(true); myPres.onDisconnect().remove(); } });
     db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
 
-    // ЧАТ
+    // ЛОГИКА ЧАТА (ВЕРНУЛ ВСПЛЫВАШКИ)
     chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
@@ -115,7 +114,6 @@
         }
     };
 
-    // Остановка всплытия событий скролла в чате (ЧТОБЫ НЕ ДВИГАЛСЯ ХОЛСТ)
     chatHist.addEventListener('wheel', e => e.stopPropagation());
     chatHist.addEventListener('touchstart', e => e.stopPropagation());
     chatHist.addEventListener('touchmove', e => e.stopPropagation());
@@ -123,14 +121,28 @@
     db.ref('chat').limitToLast(40).on('child_added', s => {
         const d = s.val();
         if (d && d.msg) {
-            const h = document.createElement('div'); h.className = 'msg-history';
-            h.innerHTML = `<b>${d.name || "Аноним"}:</b> ${d.msg}`;
-            chatHist.appendChild(h); chatHist.scrollTop = chatHist.scrollHeight;
+            const sender = d.name || "Аноним";
+
+            // 1. Создаем всплывашку (будет видна ВСЕГДА)
+            const m = document.createElement('div');
+            m.className = 'msg';
+            m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
+            chatMsgs.appendChild(m);
+            setTimeout(() => m.remove(), 7800);
+
+            // 2. Добавляем в историю (видна только при фокусе)
+            const h = document.createElement('div');
+            h.className = 'msg-history';
+            h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
+            chatHist.appendChild(h);
+            chatHist.scrollTop = chatHist.scrollHeight;
+
             if (d.name !== userName) notifySound.play().catch(() => {});
         }
     });
 
-    // УПРАВЛЕНИЕ
+    window.addEventListener('contextmenu', e => e.preventDefault());
+
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
     function applyZoom(delta, centerX, centerY) {
         const oldZ = zoom; zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
@@ -147,6 +159,18 @@
 
     let isPan = false, lastT = {x:0, y:0}, startT = {x:0, y:0}, startTime = 0, lastD = 0;
     const closeChat = () => { chatHist.style.display = 'none'; chatIn.blur(); };
+
+    canvas.onmousedown = e => { 
+        closeChat(); 
+        if(e.button === 0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
+        else if(e.button === 2) isPan = true; 
+    };
+    window.onmousemove = e => { 
+        const p = getP(e.clientX, e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
+        if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
+    };
+    window.onmouseup = () => isPan = false;
+    window.onwheel = e => { if(chatHist.style.display !== 'block') applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY); };
 
     canvas.addEventListener('touchstart', e => {
         closeChat(); startTime = Date.now();
@@ -170,14 +194,6 @@
         if(Date.now() - startTime < 150) { const p = getP(startT.x, startT.y); send(p.x, p.y); }
         isPan = false;
     });
-
-    canvas.onmousedown = e => { closeChat(); if(e.button===0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); else if(e.button===2) isPan=true; };
-    window.onmousemove = e => { 
-        const p = getP(e.clientX, e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
-        if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
-    };
-    window.onmouseup = () => isPan = false;
-    window.onwheel = e => { if(chatHist.style.display !== 'block') applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY); };
 
     function render() {
         canvas.width=window.innerWidth; canvas.height=window.innerHeight; ctx.imageSmoothingEnabled=false;
