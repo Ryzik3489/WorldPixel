@@ -117,7 +117,7 @@
     let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
     const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
 
-    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ (ВХОД И ВЫХОД) ---
+    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ ---
     const myPresRef = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { 
         if(s.val()){ 
@@ -127,7 +127,6 @@
         } 
     });
 
-    // Слушаем выходы других игроков
     db.ref('presence').on('child_removed', s => {
         const user = s.val();
         if(user) sendLog(`🔴 ${user.name || "Кто-то"} вышел`);
@@ -139,24 +138,23 @@
     db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
     db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
 
-    // --- ЧАТ ---
+    // --- ЧАТ (ЛОГИ ПРАВИЛЬНО ТУТ) ---
     chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
+            // Только отправляем в базу, лог в ТГ сделает слушатель ниже
             db.ref('chat').push({ name: userName, msg: chatIn.value.trim(), t: firebase.database.ServerValue.TIMESTAMP });
             chatIn.value = '';
         }
     };
 
-    // Слушаем сообщения для логов и UI
+    // Глобальный слушатель чата (отправляет 1 сообщение в ТГ для всех)
     db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
         if (d && d.msg) {
-            // Лог в Телеграм, если сообщение новое
             if(Date.now() - d.t < 5000) {
-                sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
+                sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`); // ОДИН ВЫЗОВ ТУТ
             }
-            // Показ в интерфейсе
             const sender = d.name || "Аноним";
             const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
@@ -166,8 +164,8 @@
         }
     });
 
-    // --- УПРАВЛЕНИЕ МЫШЬЮ (ИСПРАВЛЕНО) ---
-    window.oncontextmenu = e => { e.preventDefault(); return false; }; // Блокировка меню
+    // --- УПРАВЛЕНИЕ МЫШЬЮ ---
+    window.oncontextmenu = e => { e.preventDefault(); return false; };
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
     
@@ -190,12 +188,8 @@
 
     canvas.onmousedown = e => { 
         closeChat(); 
-        if(e.button === 0) { // Левая кнопка — рисовать
-            send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
-        }
-        else if(e.button === 2) { // Правая кнопка — только двигать
-            isPan = true; 
-        }
+        if(e.button === 0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
+        else if(e.button === 2) isPan = true; 
     };
 
     window.onmousemove = e => { 
@@ -206,7 +200,7 @@
     window.onmouseup = e => { if(e.button === 2) isPan = false; };
     window.onwheel = e => { if(chatHist.style.display !== 'block') applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY); };
 
-    // --- ТАЧ-УПРАВЛЕНИЕ (ДЛЯ ТЕЛЕФОНОВ) ---
+    // --- ТАЧ (ТЕЛЕФОНЫ) ---
     canvas.addEventListener('touchstart', e => {
         closeChat(); startTime = Date.now();
         if(e.touches.length === 1) { startT = { x: e.touches[0].clientX, y: e.touches[0].clientY }; lastT = {...startT}; isPan = true; }
