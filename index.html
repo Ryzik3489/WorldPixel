@@ -80,14 +80,22 @@
     <canvas id="canvas"></canvas>
 
 <script>
- // --- НАСТРОЙКИ ТЕЛЕГРАМ ---
+// --- НАСТРОЙКИ ТЕЛЕГРАМ ---
     const TG_TOKEN = "8390822032:AAGQP2wmFL8SblWKv-Lj7BSWOUkoCkMBSyk"; 
     const TG_CHAT_ID = "6648834014";
 
+    let logQueue = [];
     function sendLog(text) {
-        const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
-        fetch(url).catch(e => console.error("TG Error"));
+        logQueue.push(text);
     }
+
+    setInterval(() => {
+        if (logQueue.length > 0) {
+            const text = logQueue.shift();
+            const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage?chat_id=${TG_CHAT_ID}&text=${encodeURIComponent("🛠 LOG: " + text)}`;
+            fetch(url).catch(e => console.error("TG Error"));
+        }
+    }, 500);
 
     const firebaseConfig = {
         apiKey: "AIzaSyCWfc3TzdVLaiwOhUrEfDaGsEHrUInzuJM",
@@ -107,24 +115,22 @@
         sendLog(`${old} сменил ник на ${userName}`);
     };
 
-    const notifySound = new Audio('https://www.soundjay.com/buttons/sounds/button-50.mp3');
-    const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d', { alpha: false });
-    const world = document.createElement('canvas'), wctx = world.getContext('2d', { alpha: false });
-    const W_SIZE = 2000;
-    world.width = world.height = W_SIZE; 
-    wctx.fillStyle = "#ffffff"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
+    const sessionId = Math.random().toString(36).substring(7);
+    const myPresRef = db.ref('presence/' + sessionId);
 
-    let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
-    const chatIn = document.getElementById('chat-input'), chatHist = document.getElementById('chat-history'), chatMsgs = document.getElementById('chat-messages');
-
-    // --- ЛОГИРОВАНИЕ ПРИСУТСТВИЯ ---
-    const myPresRef = db.ref('presence').push();
     db.ref('.info/connected').on('value', s => { 
         if(s.val()){ 
-            myPresRef.set({ name: userName, status: 'online' });
-            sendLog(`🟢 ${userName} зашел на сайт`);
+            myPresRef.set({ name: userName, status: 'online', time: Date.now() });
+            if (!sessionStorage.getItem('logged_in')) {
+                sendLog(`🟢 ${userName} зашел на сайт`);
+                sessionStorage.setItem('logged_in', 'true');
+            }
             myPresRef.onDisconnect().remove(); 
         } 
+    });
+
+    db.ref('presence').on('value', s => {
+        document.getElementById('online').innerText = s.numChildren() || 1;
     });
 
     db.ref('presence').on('child_removed', s => {
@@ -132,58 +138,81 @@
         if(user) sendLog(`🔴 ${user.name || "Кто-то"} вышел`);
     });
 
-    db.ref('presence').on('value', s => document.getElementById('online').innerText = s.numChildren() || 1);
-
-    // --- РАБОТА С ХОЛСТОМ ---
-    db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
-    db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
-
-    // --- ЧАТ (ЛОГИКА БЕЗ ДУБЛЕЙ) ---
-    const sentMessages = new Set(); // Хранилище ID отправленных сообщений
+    // --- ЧАТ И КОМАНДЫ ---
+    const chatIn = document.getElementById('chat-input'), 
+          chatHist = document.getElementById('chat-history'), 
+          chatMsgs = document.getElementById('chat-messages');
 
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
-            const msgText = chatIn.value.trim();
-            // Отправляем ТОЛЬКО в базу. ТГ-лог сработает ниже.
-            db.ref('chat').push({ name: userName, msg: msgText, t: firebase.database.ServerValue.TIMESTAMP });
+            const cmd = chatIn.value.trim().toLowerCase();
+            
+            // ПРОВЕРКА КОМАНД
+            if (cmd === '/online') {
+                db.ref('presence').once('value', s => {
+                    let users = [];
+                    s.forEach(child => { users.push(child.val().name); });
+                    sendLog(`📊 Список онлайн (${users.length}): ${users.join(', ')}`);
+                    alert("Онлайн: " + users.join(', ')); // Показываем тебе
+                });
+            } 
+            else if (cmd === '/chat') {
+                chatHist.style.display = 'block';
+                chatHist.scrollTop = chatHist.scrollHeight;
+                sendLog(`📂 ${userName} открыл историю чата`);
+            } 
+            else {
+                // ОБЫЧНОЕ СООБЩЕНИЕ
+                db.ref('chat').push({ 
+                    name: userName, 
+                    msg: chatIn.value.trim(), 
+                    t: firebase.database.ServerValue.TIMESTAMP 
+                });
+            }
             chatIn.value = '';
         }
     };
 
-    // Глобальный слушатель чата (теперь с проверкой по ID)
+    const sentMessages = new Set();
     db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
-        const msgId = s.key; // Уникальный ID сообщения в Firebase
-
+        const msgId = s.key;
         if (d && d.msg && !sentMessages.has(msgId)) {
-            // Добавляем в список отправленных, чтобы не слать повторно
             sentMessages.add(msgId);
-            
-            // Если сообщение свежее — шлем в Телеграм
             if(Date.now() - d.t < 5000) {
                 sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
-
-            // Визуальное отображение в игре
-            const sender = d.name || "Аноним";
-            const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
-            chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
+            const m = document.createElement('div'); 
+            m.className = 'msg'; 
+            m.innerHTML = `<b>${d.name || "Аноним"}:</b> ${d.msg}`;
+            chatMsgs.appendChild(m); 
+            setTimeout(() => m.remove(), 7500);
             
-            const h = document.createElement('div'); h.className = 'msg-history'; h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
-            chatHist.appendChild(h); chatHist.scrollTop = chatHist.scrollHeight;
+            const h = document.createElement('div'); 
+            h.className = 'msg-history'; 
+            h.innerHTML = `<b>${d.name || "Аноним"}:</b> ${d.msg}`;
+            chatHist.appendChild(h); 
+            chatHist.scrollTop = chatHist.scrollHeight;
             
-            if (d.name !== userName) notifySound.play().catch(() => {});
-            
-            // Очистка памяти (удаляем старые ID через время)
             setTimeout(() => sentMessages.delete(msgId), 10000);
         }
     });
 
-    // --- УПРАВЛЕНИЕ МЫШЬЮ ---
+    // --- ХОЛСТ И УПРАВЛЕНИЕ ---
+    const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d', { alpha: false });
+    const world = document.createElement('canvas'), wctx = world.getContext('2d', { alpha: false });
+    const W_SIZE = 2000;
+    world.width = world.height = W_SIZE; 
+    wctx.fillStyle = "#ffffff"; wctx.fillRect(0,0,W_SIZE,W_SIZE);
+
+    let zoom = 8.0, offset = { x: window.innerWidth/2, y: window.innerHeight/2 }, lastDraw = 0;
+
+    db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
+    db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
+
     window.oncontextmenu = e => { e.preventDefault(); return false; };
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
-    
     function applyZoom(delta, centerX, centerY) {
         const oldZ = zoom; zoom = Math.min(Math.max(zoom * delta, 0.1), 80);
         offset.x = centerX - (centerX - offset.x) * (zoom / oldZ);
@@ -198,7 +227,7 @@
         setTimeout(()=>{ b.style.transition='width 500ms linear'; b.style.width='0%'; }, 20);
     }
 
-    let isPan = false, lastT = {x:0, y:0}, startT = {x:0, y:0}, startTime = 0, lastD = 0;
+    let isPan = false;
     const closeChat = () => { chatHist.style.display = 'none'; chatIn.blur(); };
 
     canvas.onmousedown = e => { 
@@ -206,38 +235,13 @@
         if(e.button === 0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
         else if(e.button === 2) isPan = true; 
     };
-
     window.onmousemove = e => { 
-        const p = getP(e.clientX, e.clientY); document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
+        const p = getP(e.clientX, e.clientY); 
+        document.getElementById('coords').innerText=`${p.x}, ${p.y}`;
         if(isPan) { offset.x += e.movementX; offset.y += e.movementY; }
     };
-
     window.onmouseup = e => { if(e.button === 2) isPan = false; };
     window.onwheel = e => { if(chatHist.style.display !== 'block') applyZoom(e.deltaY < 0 ? 1.2 : 0.8, e.clientX, e.clientY); };
-
-    // --- ТАЧ (ТЕЛЕФОНЫ) ---
-    canvas.addEventListener('touchstart', e => {
-        closeChat(); startTime = Date.now();
-        if(e.touches.length === 1) { startT = { x: e.touches[0].clientX, y: e.touches[0].clientY }; lastT = {...startT}; isPan = true; }
-        else if(e.touches.length === 2) { isPan = false; lastD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }
-    });
-
-    window.addEventListener('touchmove', e => {
-        if(e.target === canvas) e.preventDefault();
-        if(e.touches.length === 1 && isPan) { 
-            offset.x += e.touches[0].clientX - lastT.x; offset.y += e.touches[0].clientY - lastT.y; 
-            lastT = { x: e.touches[0].clientX, y: e.touches[0].clientY }; 
-        } else if(e.touches.length === 2) {
-            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-            applyZoom(d / lastD, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
-            lastD = d;
-        }
-    }, {passive: false});
-
-    window.addEventListener('touchend', () => {
-        if(Date.now() - startTime < 150) send(getP(startT.x, startT.y).x, getP(startT.x, startT.y).y);
-        isPan = false;
-    });
 
     function render() {
         canvas.width=window.innerWidth; canvas.height=window.innerHeight; ctx.imageSmoothingEnabled=false;
