@@ -80,7 +80,7 @@
     <canvas id="canvas"></canvas>
 
 <script>
-    // --- НАСТРОЙКИ ТЕЛЕГРАМ ---
+ // --- НАСТРОЙКИ ТЕЛЕГРАМ ---
     const TG_TOKEN = "8390822032:AAGQP2wmFL8SblWKv-Lj7BSWOUkoCkMBSyk"; 
     const TG_CHAT_ID = "6648834014";
 
@@ -139,37 +139,47 @@
     db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
 
     // --- ЧАТ (ЛОГИКА БЕЗ ДУБЛЕЙ) ---
-    chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
-    
+    const sentMessages = new Set(); // Хранилище ID отправленных сообщений
+
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
             const msgText = chatIn.value.trim();
+            // Отправляем ТОЛЬКО в базу. ТГ-лог сработает ниже.
             db.ref('chat').push({ name: userName, msg: msgText, t: firebase.database.ServerValue.TIMESTAMP });
-            // Твой лог отправляем сразу здесь
-            sendLog(`💬 [ЧАТ] ${userName}: ${msgText}`); 
             chatIn.value = '';
         }
     };
 
-    // Слушатель для сообщений ДРУГИХ игроков
+    // Глобальный слушатель чата (теперь с проверкой по ID)
     db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
-        if (d && d.msg) {
-            // Если пишет ДРУГОЙ человек — шлем лог в ТГ
-            if(Date.now() - d.t < 5000 && d.name !== userName) {
+        const msgId = s.key; // Уникальный ID сообщения в Firebase
+
+        if (d && d.msg && !sentMessages.has(msgId)) {
+            // Добавляем в список отправленных, чтобы не слать повторно
+            sentMessages.add(msgId);
+            
+            // Если сообщение свежее — шлем в Телеграм
+            if(Date.now() - d.t < 5000) {
                 sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
-            // Визуальное отображение (для всех)
+
+            // Визуальное отображение в игре
             const sender = d.name || "Аноним";
             const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
+            
             const h = document.createElement('div'); h.className = 'msg-history'; h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatHist.appendChild(h); chatHist.scrollTop = chatHist.scrollHeight;
+            
             if (d.name !== userName) notifySound.play().catch(() => {});
+            
+            // Очистка памяти (удаляем старые ID через время)
+            setTimeout(() => sentMessages.delete(msgId), 10000);
         }
     });
 
-    // --- УПРАВЛЕНИЕ ---
+    // --- УПРАВЛЕНИЕ МЫШЬЮ ---
     window.oncontextmenu = e => { e.preventDefault(); return false; };
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
