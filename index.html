@@ -138,23 +138,28 @@
     db.ref('canvas').on('child_added', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
     db.ref('canvas').on('child_changed', s => { const p = s.val(); if(p){ wctx.fillStyle = p.color; wctx.fillRect(p.x, p.y, 1, 1); }});
 
-    // --- ЧАТ (ЛОГИ ПРАВИЛЬНО ТУТ) ---
+    // --- ЧАТ (ЛОГИКА БЕЗ ДУБЛЕЙ) ---
     chatIn.onfocus = () => { chatHist.style.display = 'block'; chatHist.scrollTop = chatHist.scrollHeight; };
+    
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
-            // Только отправляем в базу, лог в ТГ сделает слушатель ниже
-            db.ref('chat').push({ name: userName, msg: chatIn.value.trim(), t: firebase.database.ServerValue.TIMESTAMP });
+            const msgText = chatIn.value.trim();
+            db.ref('chat').push({ name: userName, msg: msgText, t: firebase.database.ServerValue.TIMESTAMP });
+            // Твой лог отправляем сразу здесь
+            sendLog(`💬 [ЧАТ] ${userName}: ${msgText}`); 
             chatIn.value = '';
         }
     };
 
-    // Глобальный слушатель чата (отправляет 1 сообщение в ТГ для всех)
+    // Слушатель для сообщений ДРУГИХ игроков
     db.ref('chat').limitToLast(1).on('child_added', s => {
         const d = s.val();
         if (d && d.msg) {
-            if(Date.now() - d.t < 5000) {
-                sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`); // ОДИН ВЫЗОВ ТУТ
+            // Если пишет ДРУГОЙ человек — шлем лог в ТГ
+            if(Date.now() - d.t < 5000 && d.name !== userName) {
+                sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
+            // Визуальное отображение (для всех)
             const sender = d.name || "Аноним";
             const m = document.createElement('div'); m.className = 'msg'; m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatMsgs.appendChild(m); setTimeout(() => m.remove(), 7500);
@@ -164,7 +169,7 @@
         }
     });
 
-    // --- УПРАВЛЕНИЕ МЫШЬЮ ---
+    // --- УПРАВЛЕНИЕ ---
     window.oncontextmenu = e => { e.preventDefault(); return false; };
 
     function getP(cx, cy) { return { x: Math.floor((cx-offset.x)/zoom + W_SIZE/2), y: Math.floor((cy-offset.y)/zoom + W_SIZE/2) }; }
