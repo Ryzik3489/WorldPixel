@@ -140,10 +140,25 @@
         if(user && user.name !== userName) sendLog(`🔴 ${user.name} вышел`);
     });
 
-    // --- ЧАТ И КОМАНДЫ (ИСПРАВЛЕНО) ---
+    // --- ЧАТ И КОМАНДЫ (С ОТКРЫТИЕМ ИСТОРИИ) ---
     const chatIn = document.getElementById('chat-input'), 
           chatHist = document.getElementById('chat-history'), 
           chatMsgs = document.getElementById('chat-messages');
+
+    // Функция открытия истории
+    const openChat = () => {
+        chatHist.style.display = 'block';
+        chatHist.scrollTop = chatHist.scrollHeight;
+    };
+
+    // Функция закрытия истории
+    const closeChat = () => { 
+        chatHist.style.display = 'none'; 
+        chatIn.blur(); 
+    };
+
+    // Событие при клике/фокусе на чат
+    chatIn.onfocus = openChat;
 
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
@@ -157,8 +172,7 @@
                     sendLog(`📊 Список онлайн (${users.length}): ${users.join(', ')}`);
                 });
             } else if (cmd === '/chat') {
-                chatHist.style.display = 'block';
-                chatHist.scrollTop = chatHist.scrollHeight;
+                openChat();
             } else {
                 db.ref('chat').push({ 
                     name: userName, 
@@ -177,14 +191,13 @@
         if (d && d.msg && !sentMessages.has(msgId)) {
             sentMessages.add(msgId);
             
-            // Лог в ТГ только для НОВЫХ сообщений (после загрузки страницы)
             if(d.t > pageLoadTime && d.name !== userName) {
                 sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
 
             const sender = d.name || "Аноним";
             
-            // Всплывающее уведомление (только для свежих)
+            // Всплывающие уведомления (только если история закрыта)
             if (d.t > pageLoadTime - 5000) {
                 const m = document.createElement('div'); 
                 m.className = 'msg'; 
@@ -193,12 +206,12 @@
                 setTimeout(() => m.remove(), 7500);
             }
             
-            // Добавляем в историю (всегда)
+            // Добавляем в историю
             const h = document.createElement('div'); 
             h.className = 'msg-history'; 
             h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatHist.appendChild(h); 
-            chatHist.scrollTop = chatHist.scrollHeight;
+            if (chatHist.style.display === 'block') chatHist.scrollTop = chatHist.scrollHeight;
             
             setTimeout(() => sentMessages.delete(msgId), 15000);
         }
@@ -234,10 +247,9 @@
     }
 
     let isPan = false;
-    const closeChat = () => { chatHist.style.display = 'none'; chatIn.blur(); };
 
     canvas.onmousedown = e => { 
-        closeChat(); 
+        closeChat(); // Закрываем чат при клике на холст
         if(e.button === 0) send(getP(e.clientX, e.clientY).x, getP(e.clientX, e.clientY).y); 
         else if(e.button === 2) isPan = true; 
     };
