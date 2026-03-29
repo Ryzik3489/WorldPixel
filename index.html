@@ -104,6 +104,7 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // --- ЮЗЕР И СЕССИЯ ---
     const nickInput = document.getElementById('nick-input');
     let userName = localStorage.getItem('worldpixel_name') || "Гость_" + Math.floor(Math.random() * 99);
     nickInput.value = userName;
@@ -117,10 +118,11 @@
 
     const sessionId = Math.random().toString(36).substring(7);
     const myPresRef = db.ref('presence/' + sessionId);
+    const pageLoadTime = Date.now(); 
 
     db.ref('.info/connected').on('value', s => { 
         if(s.val()){ 
-            myPresRef.set({ name: userName, status: 'online', time: Date.now() });
+            myPresRef.set({ name: userName, status: 'online', time: pageLoadTime });
             if (!sessionStorage.getItem('logged_in')) {
                 sendLog(`🟢 ${userName} зашел на сайт`);
                 sessionStorage.setItem('logged_in', 'true');
@@ -135,37 +137,32 @@
 
     db.ref('presence').on('child_removed', s => {
         const user = s.val();
-        if(user) sendLog(`🔴 ${user.name || "Кто-то"} вышел`);
+        if(user && user.name !== userName) sendLog(`🔴 ${user.name} вышел`);
     });
 
-    // --- ЧАТ И КОМАНДЫ ---
+    // --- ЧАТ И КОМАНДЫ (ИСПРАВЛЕНО) ---
     const chatIn = document.getElementById('chat-input'), 
           chatHist = document.getElementById('chat-history'), 
           chatMsgs = document.getElementById('chat-messages');
 
     chatIn.onkeydown = e => {
         if (e.key === 'Enter' && chatIn.value.trim()) {
-            const cmd = chatIn.value.trim().toLowerCase();
+            const val = chatIn.value.trim();
+            const cmd = val.toLowerCase();
             
-            // ПРОВЕРКА КОМАНД
             if (cmd === '/online') {
                 db.ref('presence').once('value', s => {
                     let users = [];
                     s.forEach(child => { users.push(child.val().name); });
                     sendLog(`📊 Список онлайн (${users.length}): ${users.join(', ')}`);
-                    alert("Онлайн: " + users.join(', ')); // Показываем тебе
                 });
-            } 
-            else if (cmd === '/chat') {
+            } else if (cmd === '/chat') {
                 chatHist.style.display = 'block';
                 chatHist.scrollTop = chatHist.scrollHeight;
-                sendLog(`📂 ${userName} открыл историю чата`);
-            } 
-            else {
-                // ОБЫЧНОЕ СООБЩЕНИЕ
+            } else {
                 db.ref('chat').push({ 
                     name: userName, 
-                    msg: chatIn.value.trim(), 
+                    msg: val, 
                     t: firebase.database.ServerValue.TIMESTAMP 
                 });
             }
@@ -174,27 +171,36 @@
     };
 
     const sentMessages = new Set();
-    db.ref('chat').limitToLast(1).on('child_added', s => {
+    db.ref('chat').limitToLast(20).on('child_added', s => {
         const d = s.val();
         const msgId = s.key;
         if (d && d.msg && !sentMessages.has(msgId)) {
             sentMessages.add(msgId);
-            if(Date.now() - d.t < 5000) {
+            
+            // Лог в ТГ только для НОВЫХ сообщений (после загрузки страницы)
+            if(d.t > pageLoadTime && d.name !== userName) {
                 sendLog(`💬 [ЧАТ] ${d.name}: ${d.msg}`);
             }
-            const m = document.createElement('div'); 
-            m.className = 'msg'; 
-            m.innerHTML = `<b>${d.name || "Аноним"}:</b> ${d.msg}`;
-            chatMsgs.appendChild(m); 
-            setTimeout(() => m.remove(), 7500);
+
+            const sender = d.name || "Аноним";
             
+            // Всплывающее уведомление (только для свежих)
+            if (d.t > pageLoadTime - 5000) {
+                const m = document.createElement('div'); 
+                m.className = 'msg'; 
+                m.innerHTML = `<b>${sender}:</b> ${d.msg}`;
+                chatMsgs.appendChild(m); 
+                setTimeout(() => m.remove(), 7500);
+            }
+            
+            // Добавляем в историю (всегда)
             const h = document.createElement('div'); 
             h.className = 'msg-history'; 
-            h.innerHTML = `<b>${d.name || "Аноним"}:</b> ${d.msg}`;
+            h.innerHTML = `<b>${sender}:</b> ${d.msg}`;
             chatHist.appendChild(h); 
             chatHist.scrollTop = chatHist.scrollHeight;
             
-            setTimeout(() => sentMessages.delete(msgId), 10000);
+            setTimeout(() => sentMessages.delete(msgId), 15000);
         }
     });
 
